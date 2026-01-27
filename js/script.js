@@ -116,11 +116,16 @@ const endpointManager = {
 
     async probe() {
         if (this.isLocked) return;
+        const key = apiKey.value.trim();
         console.log('🔍 开始 6 端口全量性能检测...');
         const results = await Promise.all(this.list.map(async (url) => {
             const start = Date.now();
             try {
-                const resp = await fetch(`${url}/v1beta/models`, { method: 'GET', priority: 'high' });
+                const resp = await fetch(`${url}/v1beta/models`, {
+                    method: 'GET',
+                    priority: 'high',
+                    headers: key ? { 'Authorization': `Bearer ${key}` } : {}
+                });
                 return { url, latency: resp.ok ? Date.now() - start : 5000 };
             } catch (e) {
                 return { url, latency: 9999 };
