@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>云创AI视觉 - 队列批量生成系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>云创AI视觉 - 队列批量生成系统</h1>
+            <p class="subtitle">多批次任务管理 · 智能队列调度 · 高效并发生成</p>
+        </div>
+
+        <div class="main-operation-block">
+            <div class="card-title">⚙️ API配置</div>
+            <div class="api-config-grid">
+                <div class="form-group">
+                    <label for="apiEndpoint">API端点</label>
+                    <input type="password" id="apiEndpoint" placeholder="输入您的端口">
+                </div>
+                <div class="form-group">
+                    <label for="apiKey">API密钥</label>
+                    <input type="password" id="apiKey" placeholder="输入您的密钥">
+                </div>
+                <div class="form-group">
+                    <label for="modelName">选择模型</label>
+                    <select id="modelName">
+                        <option value="gemini-3-pro-image-preview" selected>「CS」gemini-3-pro-image-preview (推荐)</option>
+                        <option value="gemini-3-pro-image-preview">「QM」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">「XXQ」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">「YS」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">「ZX」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview-4K">「Rim」gemini-3-pro-image-preview-4K</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="aspectRatio">图片比例</label>
+                    <select id="aspectRatio">
+                        <option value="1:1" selected>3:4 (竖版)</option>
+                        <option value="3:4">1:1 (正方形)</option>
+                        <option value="9:16">9:16 (长竖版)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="concurrency">并发数 <span style="color: var(--slate-500); font-size: 0.75rem;">(建议:
+                            4-6)</span></label>
+                    <input type="number" id="concurrency" value="4" min="1" max="10">
+                    <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--slate-600);">
+                        💡 提示：并发数越高越快，但API可能限制并发请求数
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-operation-block">
+            <div class="input-section">
+                <div class="card">
+                    <div class="card-title">📦 上传产品图</div>
+                    <button class="btn btn-primary" style="width: 100%; margin-bottom: 0.5rem;"
+                        onclick="document.getElementById('productInput').click()">
+                        选择产品图片
+                    </button>
+                    <div class="upload-area" id="productUploadArea">
+                        <div id="productPlaceholder">
+                            <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            <p class="upload-text">拖拽上传</p>
+                            <p class="upload-hint">支持多张</p>
+                        </div>
+                        <div class="preview-grid" id="productPreview"></div>
+                    </div>
+                    <input type="file" id="productInput"
+                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
+                        multiple>
+                </div>
+
+                <div class="card" style="display: flex; flex-direction: column; position: relative;">
+                    <div class="card-title">✏️ 生成提示词</div>
+                    <div style="flex: 1; display: flex; gap: 1rem;">
+                        <textarea id="promptInput" placeholder="例如: 将这件衣服穿在模特身上，室外场景，自然光，专业摄影..."
+                            style="flex: 1; min-height: 200px;"></textarea>
+
+                        <button class="btn btn-add-task" id="addTaskBtn" disabled
+                            style="width: 160px; align-self: stretch; font-size: 1.125rem; flex-shrink: 0;">
+                            添加到任务队列
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">🖼️ 参考图片(可选)</div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <button class="btn btn-success" style="flex: 1;"
+                            onclick="document.getElementById('referenceInput').click()">
+                            选择参考图片
+                        </button>
+                        <button class="btn btn-success" style="flex: 1;"
+                            onclick="document.getElementById('referenceFolderInput').click()">
+                            📁 选择文件夹
+                        </button>
+                    </div>
+                    <div class="upload-area" id="referenceUploadArea">
+                        <button class="btn-clear" onclick="clearReferenceImages()">清除</button>
+                        <div class="upload-count-badge" id="referenceCountBadge">0 张</div>
+                        <div id="referencePlaceholder">
+                            <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                                </path>
+                            </svg>
+                            <p class="upload-text">拖拽上传</p>
+                            <p class="upload-hint">背景参考</p>
+                        </div>
+                        <div class="preview-grid" id="referencePreview"></div>
+                    </div>
+                    <input type="file" id="referenceInput"
+                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
+                        multiple>
+                    <input type="file" id="referenceFolderInput"
+                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
+                        webkitdirectory multiple>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-operation-block" style="background: rgba(248, 250, 252, 0.8);">
+            <div class="queue-header">
+                <div class="queue-title">📋 任务队列</div>
+                <div class="queue-controls">
+                    <button class="btn btn-primary" id="startQueueBtn" disabled>▶️ 开始执行队列</button>
+                    <button class="btn btn-primary" id="pauseQueueBtn" style="display: none;">⏸️ 暂停</button>
+                    <button class="btn btn-primary" id="clearQueueBtn">🗑️ 清空队列</button>
+                </div>
+            </div>
+
+            <div class="queue-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="totalTasks">0</div>
+                    <div class="stat-label">总任务数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="pendingTasks">0</div>
+                    <div class="stat-label">等待中</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="processingTasks">0</div>
+                    <div class="stat-label">进行中</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="completedTasks">0</div>
+                    <div class="stat-label">已完成</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="failedTasks">0</div>
+                    <div class="stat-label">失败</div>
+                </div>
+            </div>
+
+            <div class="task-list" id="taskList">
+                <div class="empty-state">
+                    <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
+                        </path>
+                    </svg>
+                    <p>暂无任务,请添加任务到队列</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+
+</html>
