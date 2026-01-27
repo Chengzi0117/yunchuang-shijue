@@ -107,6 +107,49 @@ const addTaskBtn = document.getElementById('addTaskBtn');
 const startQueueBtn = document.getElementById('startQueueBtn');
 const pauseQueueBtn = document.getElementById('pauseQueueBtn');
 const clearQueueBtn = document.getElementById('clearQueueBtn');
+// 接口择优管理器
+const endpointManager = {
+    list: ['/api/proxy1', '/api/proxy2', '/api/proxy3', '/api/proxy4', '/api/proxy5', '/api/proxy6'],
+    sortedList: [],
+    best: '/api/proxy1',
+    isLocked: false,
+
+    async probe() {
+        if (this.isLocked) return;
+        console.log('🔍 开始 6 端口全量性能检测...');
+        const results = await Promise.all(this.list.map(async (url) => {
+            const start = Date.now();
+            try {
+                const resp = await fetch(`${url}/v1beta/models`, { method: 'GET', priority: 'high' });
+                return { url, latency: resp.ok ? Date.now() - start : 5000 };
+            } catch (e) {
+                return { url, latency: 9999 };
+            }
+        }));
+        results.sort((a, b) => a.latency - b.latency);
+        this.sortedList = results.map(r => r.url);
+        this.best = this.sortedList[0];
+        console.log('🚀 竞速排名:', results.map(r => `${r.url}(${r.latency}ms)`).join(' > '));
+    },
+
+    getNext(currentUrl) {
+        if (this.isLocked) this.isLocked = false;
+        const list = this.sortedList.length > 0 ? this.sortedList : this.list;
+        const currentIndex = list.indexOf(currentUrl);
+        const nextUrl = list[currentIndex + 1] || list[0];
+        console.warn(`⚠️ 故障切换: ${currentUrl} -> ${nextUrl}`);
+        return nextUrl;
+    },
+
+    lock(url) {
+        if (!this.isLocked) {
+            this.best = url;
+            this.isLocked = true;
+            console.log(`✅ 已锁定接口: ${url}`);
+        }
+    }
+};
+
 const taskList = document.getElementById('taskList');
 
 // IndexedDB 管理器 - 解决 localStorage 5MB 限制问题
@@ -515,6 +558,10 @@ function updateStats() {
 
 startQueueBtn.addEventListener('click', async () => {
     if (isProcessing) return;
+
+    // 启动前先测速择优
+    await endpointManager.probe();
+
     isProcessing = true;
     startQueueBtn.style.display = 'none';
     pauseQueueBtn.style.display = 'inline-flex';
@@ -579,7 +626,8 @@ function getTimeString() {
 }
 
 async function processTask(task) {
-    const endpoint = `${apiEndpoint.value.trim()}/v1beta/models/${modelName.value}:generateContent`;
+    // 动态拼接路径，不再从 input 读取死值
+    const getEndpoint = (baseUrl) => `${baseUrl}/v1beta/models/${modelName.value}:generateContent`;
     const maxConcurrent = parseInt(concurrency.value) || 3;
 
     task.results = [];
@@ -624,7 +672,8 @@ async function processTask(task) {
 
         const batchPromises = batch.map((taskItem, batchIndex) => {
             const taskNum = i + batchIndex + 1;
-            return generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks)
+            // 初始使用检测出的最优接口（或已锁定的接口）
+            return generateSingleImage(task, taskItem, endpointManager.best, taskNum, totalTasks, getEndpoint)
                 .then(res => ({ success: true, data: res }))
                 .catch(err => ({ success: false, error: err.message }));
         });
@@ -659,10 +708,11 @@ async function processTask(task) {
     console.log(`└─────────────────────────────────────────────────────\n`);
 }
 
-async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks) {
+async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, totalTasks, getEndpointFn) {
     const { productImg, productIndex, refImg, refIndex } = taskItem;
     const maxRetries = 3;
     let retryCount = 0;
+    let activeBaseUrl = currentBaseUrl; // 允许在重试中动态切换
 
     let finalPrompt = task.prompt;
     if (refImg) {
@@ -699,17 +749,16 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
 
     while (retryCount <= maxRetries) {
         try {
+            const fullApiUrl = getEndpointFn(activeBaseUrl);
             const apiStartTime = Date.now();
-            console.log(`📤[${getTimeString()}] API请求 ${taskNum}/${totalTasks}${retryCount > 0 ? ` (重试第${retryCount}次)` : ''}:`, {
-                endpoint: endpoint,
+
+            console.log(`📤[${getTimeString()}] [${activeBaseUrl}] API请求 ${taskNum}/${totalTasks}:`, {
                 model: modelName.value,
-                aspectRatio: task.aspectRatio || aspectRatio.value,
-                prompt: finalPrompt.substring(0, 100) + '...',
-                productImage: productImg.name,
-                referenceImage: refImg ? `参考图${refIndex + 1}` : '无'
+                aspectRatio: task.aspectRatio,
+                retry: retryCount
             });
 
-            const response = await fetch(endpoint, {
+            const response = await fetch(fullApiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -722,15 +771,16 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
             const apiDuration = ((apiEndTime - apiStartTime) / 1000).toFixed(2);
 
             const responseText = await response.text();
-            console.log(`📥 [${getTimeString()}] API响应 ${taskNum}/${totalTasks}: ${response.status} ${response.statusText} (耗时: ${apiDuration}秒)`);
+            console.log(`📥 [${getTimeString()}] [${activeBaseUrl}] 响应 ${response.status} (耗时: ${apiDuration}秒)`);
 
             if (!response.ok) {
-                // 针对 502/503/504 或 请求超时进行重试
+                // 如果是 502/超时/频率限制，执行瀑布流切换
                 if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
-                    const delay = Math.pow(2, retryCount) * 2000;
-                    console.warn(`⚠️ API 报错 ${response.status}，正在进行第 ${retryCount + 1} 次重试，等待 ${delay / 1000}s...`);
-                    await new Promise(r => setTimeout(r, delay));
                     retryCount++;
+                    activeBaseUrl = endpointManager.getNext(activeBaseUrl); // 瀑布流切换
+                    const delay = 500 * retryCount;
+                    console.warn(`⚠️ 接口报错 ${response.status}，按照排序切换至 ${activeBaseUrl} 并重试...`);
+                    await new Promise(r => setTimeout(r, delay));
                     continue;
                 }
 
@@ -747,6 +797,9 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
 
                 throw new Error(`图片${taskNum} API请求失败 (${response.status})\n响应: ${responseText.substring(0, 200)}`);
             }
+
+            // --- 核心改动：成功后锁定接口 ---
+            endpointManager.lock(activeBaseUrl);
 
             let data;
             try {
@@ -780,11 +833,12 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
             throw new Error(`无法提取图片${taskNum}数据`);
 
         } catch (error) {
-            if (retryCount < maxRetries && error.message.includes('fetch')) {
-                const delay = Math.pow(2, retryCount) * 2000;
-                console.warn(`⚠️ 网络连接失败，正在重试... ${delay / 1000}s`);
-                await new Promise(r => setTimeout(r, delay));
+            if (retryCount < maxRetries && (error.message.includes('fetch') || error.message.includes('Network'))) {
                 retryCount++;
+                activeBaseUrl = endpointManager.getNext(activeBaseUrl); // 瀑布流切换
+                const delay = 1000;
+                console.warn(`⚠️ 网络连接失败，切换至 ${activeBaseUrl} 并重启重试...`);
+                await new Promise(r => setTimeout(r, delay));
                 continue;
             }
             throw error;
