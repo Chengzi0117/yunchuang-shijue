@@ -555,9 +555,15 @@ async function processQueue() {
 
         try {
             await processTask(task);
-            task.status = 'completed';
+            // 处理完后，根据结果判断状态
+            if (task.results.length === 0 && task.productImages.length > 0) {
+                task.status = 'failed';
+            } else {
+                task.status = 'completed';
+                task.progress = 100; // 强制标记为100%
+            }
         } catch (error) {
-            console.error('任务失败:', error);
+            console.error('任务处理过程发生严重错误:', error);
             task.status = 'failed';
         }
 
@@ -616,17 +622,27 @@ async function processTask(task) {
         const batchNum = Math.floor(i / maxConcurrent) + 1;
         console.log(`🚀[${getTimeString()}] 开始第 ${batchNum} 批，并发调用 ${batch.length} 个API...\n`);
 
-        const promises = batch.map((taskItem, batchIndex) => {
+        const batchPromises = batch.map((taskItem, batchIndex) => {
             const taskNum = i + batchIndex + 1;
-            return generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks);
+            return generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks)
+                .then(res => ({ success: true, data: res }))
+                .catch(err => ({ success: false, error: err.message }));
         });
 
-        const results = await Promise.all(promises);
-        task.results.push(...results);
+        const batchResults = await Promise.all(batchPromises);
 
-        task.progress = Math.round((task.results.length / totalTasks) * 100);
-        console.log(`\n✅[${getTimeString()}] 第 ${batchNum} 批完成，当前进度: ${task.progress} % (${task.results.length} / ${totalTasks}) \n`);
+        batchResults.forEach(res => {
+            if (res.success) {
+                task.results.push(res.data);
+            } else {
+                console.error(`❌ 该图片生成失败: ${res.error}`);
+            }
+        });
+
+        task.progress = Math.round(((i + batch.length) / totalTasks) * 100);
+        console.log(`\n✅[${getTimeString()}] 第 ${batchNum} 批处理完毕，当前成功: ${task.results.length} / ${i + batch.length} \n`);
         renderTaskList();
+        saveQueueToStorage(); // 每一批次完成后保存进度
     }
 
     const endTime = Date.now();
@@ -711,12 +727,24 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
             if (!response.ok) {
                 // 针对 502/503/504 或 请求超时进行重试
                 if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
-                    const delay = Math.pow(2, retryCount) * 2000; // 指数级等待 2s, 4s, 8s
+                    const delay = Math.pow(2, retryCount) * 2000;
                     console.warn(`⚠️ API 报错 ${response.status}，正在进行第 ${retryCount + 1} 次重试，等待 ${delay / 1000}s...`);
                     await new Promise(r => setTimeout(r, delay));
                     retryCount++;
                     continue;
                 }
+
+                // 专门处理 400 错误
+                if (response.status === 400) {
+                    let errMsg = `图片${taskNum} 被拒绝 (400)`;
+                    if (responseText.includes('safety') || responseText.includes('blocked')) {
+                        errMsg = `图片${taskNum} 生成由于安全策略被拦截，请尝试更换图片或简化提示词`;
+                    } else if (responseText.includes('openai_error')) {
+                        errMsg = `图片${taskNum} 参数错误或代理接口限制，建议降低并发数或缩短提示词`;
+                    }
+                    throw new Error(errMsg);
+                }
+
                 throw new Error(`图片${taskNum} API请求失败 (${response.status})\n响应: ${responseText.substring(0, 200)}`);
             }
 
