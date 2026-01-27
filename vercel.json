@@ -1,8 +1,12 @@
 {
     "rewrites": [
         {
-            "source": "/api/proxy/:match*",
+            "source": "/api/proxy1/:match*",
             "destination": "http://154.36.173.51:3000/:match*"
+        },
+        {
+            "source": "/api/proxy2/:match*",
+            "destination": "http://157.254.18.127:3000/:match*"
         }
     ]
 }
