@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>云创AI视觉 - 队列批量生成系统</title>
+    <!-- 引入 JSZip 库用于打包下载 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-600: #4F46E5;
+            --primary-700: #4338CA;
+            --primary-50: #EEF2FF;
+            --primary-100: #E0E7FF;
+            --slate-50: #F8FAFC;
+            --slate-100: #F1F5F9;
+            --slate-200: #E2E8F0;
+            --slate-300: #CBD5E1;
+            --slate-400: #94A3B8;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-900: #0F172A;
+            --success: #10B981;
+            --error: #EF4444;
+            --warning: #F59E0B;
+            --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --radius-xl: 1rem;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--gradient-primary);
+            min-height: 100vh;
+            padding: 1.5rem;
+            line-height: 1.6;
+            color: var(--slate-900);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0;
+        }
+
+        /* 板块1：轻量级头部 */
+        .header {
+            text-align: center;
+            padding: 1.5rem 1.5rem;
+            margin-bottom: 1.5rem;
+            background: rgba(248, 250, 252, 0.8);
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius-xl);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+        }
+
+        h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--slate-600);
+            font-size: 1rem;
+        }
+
+        /* 板块2-4：主操作卡片 - 浅灰色半透明+深阴影 */
+        .main-operation-block {
+            background: rgba(248, 250, 252, 0.8);
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius-xl);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+        }
+
+        /* API配置区域 - 顶部横向 */
+        .api-config-section {
+            background: linear-gradient(to bottom right, var(--primary-50), white);
+            border: 1px solid var(--primary-100);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .api-config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        /* 三栏输入区域 */
+        .input-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            border: 1px solid var(--slate-200);
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--slate-900);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .btn-clear {
+            position: absolute;
+            top: 0.5rem;
+            right: 1rem;
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            background: var(--error);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 200ms ease;
+            z-index: 10;
+            box-shadow: var(--shadow-md);
+            display: none;
+        }
+
+        .btn-clear.active {
+            display: block;
+        }
+
+        .btn-clear:hover {
+            background: #DC2626;
+            transform: translateY(-1px);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--slate-700);
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--slate-300);
+            border-radius: var(--radius-md);
+            font-size: 0.875rem;
+            transition: all 150ms ease;
+            background: white;
+            color: var(--slate-900);
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary-600);
+            box-shadow: 0 0 0 3px var(--primary-50);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+            font-family: inherit;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--slate-300);
+            border-radius: var(--radius-lg);
+            padding: 2rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 200ms ease;
+            background: var(--slate-50);
+            height: 180px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            position: relative;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        /* 自定义上传区域滚动条 */
+        .upload-area::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .upload-area::-webkit-scrollbar-track {
+            background: var(--slate-100);
+            border-radius: 3px;
+        }
+
+        .upload-area::-webkit-scrollbar-thumb {
+            background: var(--slate-400);
+            border-radius: 3px;
+        }
+
+        .upload-area::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-600);
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary-600);
+            background: var(--primary-50);
+        }
+
+        .upload-icon {
+            width: 3rem;
+            height: 3rem;
+            color: var(--slate-400);
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-text {
+            color: var(--slate-700);
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        .upload-hint {
+            color: var(--slate-500);
+            font-size: 0.75rem;
+            margin-top: 0.25rem;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+            gap: 0.5rem;
+            margin-top: 1rem;
+            width: 100%;
+            flex-shrink: 0;
+        }
+
+        .preview-item {
+            position: relative;
+            aspect-ratio: 1;
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            background: var(--slate-100);
+            border: 2px solid var(--slate-200);
+        }
+
+        .preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 0.25rem;
+            right: 0.25rem;
+            width: 1.5rem;
+            height: 1.5rem;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-count-badge {
+            position: absolute;
+            top: 0.5rem;
+            left: 1rem;
+            background: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--radius-lg);
+            border: 2px solid var(--primary-600);
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--primary-600);
+            display: none;
+        }
+
+        .upload-count-badge.active {
+            display: block;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border-radius: var(--radius-md);
+            border: none;
+            cursor: pointer;
+            transition: all 200ms ease;
+        }
+
+        .btn-primary {
+            background: var(--primary-600);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-700);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:disabled {
+            background: var(--slate-300);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-add-task {
+            width: 100%;
+            padding: 1rem 2rem;
+            font-size: 1.125rem;
+            font-weight: 600;
+            background: var(--gradient-primary);
+            color: white;
+        }
+
+        .btn-add-task:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+
+        /* 板块3：结果容器 - 浅灰背景+边框 */
+        .queue-section {
+            background: rgba(248, 250, 252, 0.6);
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius-xl);
+            padding: 2rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .queue-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .queue-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--slate-900);
+        }
+
+        .queue-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .queue-stats {
+            display: flex;
+            gap: 1.5rem;
+            padding: 1rem;
+            background: var(--slate-50);
+            border-radius: var(--radius-md);
+            margin-bottom: 1rem;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary-600);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--slate-600);
+            margin-top: 0.25rem;
+        }
+
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .task-item {
+            background: white;
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            transition: all 200ms ease;
+        }
+
+        .task-item.processing {
+            border-color: var(--primary-600);
+            box-shadow: 0 0 0 3px var(--primary-50);
+        }
+
+        .task-item.completed {
+            border-color: var(--success);
+        }
+
+        .task-item.failed {
+            border-color: var(--error);
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .task-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+
+        .task-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .task-status.pending {
+            background: var(--slate-100);
+            color: var(--slate-700);
+        }
+
+        .task-status.processing {
+            background: var(--primary-100);
+            color: var(--primary-700);
+        }
+
+        .task-status.completed {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .task-status.failed {
+            background: #FEE2E2;
+            color: #991B1B;
+        }
+
+        .task-info {
+            display: flex;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+
+        .task-progress {
+            margin-bottom: 1rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--slate-200);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-600);
+            transition: width 300ms ease;
+        }
+
+        .progress-text {
+            font-size: 0.75rem;
+            color: var(--slate-600);
+            margin-top: 0.5rem;
+        }
+
+        .task-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .result-item {
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            border: 1px solid var(--slate-200);
+        }
+
+        .result-item img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+        }
+
+        .result-actions {
+            padding: 0.5rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.75rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--slate-500);
+        }
+
+        .empty-icon {
+            width: 4rem;
+            height: 4rem;
+            margin: 0 auto 1rem;
+            color: var(--slate-300);
+        }
+
+        @media (max-width: 1024px) {
+            .input-section {
+                grid-template-columns: 1fr;
+            }
+
+            .api-config-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>云创AI视觉 - 队列批量生成系统</h1>
+            <p class="subtitle">多批次任务管理 · 智能队列调度 · 高效并发生成</p>
+        </div>
+
+        <!-- 板块2：API配置（独立卡片）-->
+        <div class="main-operation-block">
+            <div class="card-title">⚙️ API配置</div>
+            <div class="api-config-grid">
+                <div class="form-group">
+                    <label for="apiEndpoint">API端点</label>
+                    <input type="password" id="apiEndpoint" placeholder="输入您的端口">
+                </div>
+                <div class="form-group">
+                    <label for="apiKey">API密钥</label>
+                    <input type="password" id="apiKey" placeholder="输入您的密钥">
+                </div>
+                <div class="form-group">
+                    <label for="modelName">选择模型</label>
+                    <select id="modelName">
+                        <option value="gemini-3-pro-image-preview" selected>「CS」gemini-3-pro-image-preview (推荐)</option>
+                        <option value="gemini-3-pro-image-preview">「QM」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">「XXQ」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">「YS」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">「ZX」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview-4K">「Rim」gemini-3-pro-image-preview-4K</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="aspectRatio">图片比例</label>
+                    <select id="aspectRatio">
+                        <option value="1:1" selected>3:4 (竖版)</option>
+                        <option value="3:4">1:1 (正方形)</option>
+                        <option value="9:16">9:16 (长竖版)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="concurrency">并发数 <span style="color: var(--slate-500); font-size: 0.75rem;">(建议:
+                            4-6)</span></label>
+                    <input type="number" id="concurrency" value="4" min="1" max="10">
+                    <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--slate-600);">
+                        💡 提示：并发数越高越快，但API可能限制并发请求数
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 板块3：三栏输入区域（独立卡片）-->
+        <div class="main-operation-block">
+            <div class="input-section">
+                <!-- 产品图上传 -->
+                <div class="card">
+                    <div class="card-title">📦 上传产品图</div>
+                    <button class="btn btn-primary" style="width: 100%; margin-bottom: 0.5rem;"
+                        onclick="document.getElementById('productInput').click()">
+                        选择产品图片
+                    </button>
+                    <div class="upload-area" id="productUploadArea">
+                        <div id="productPlaceholder">
+                            <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            <p class="upload-text">拖拽上传</p>
+                            <p class="upload-hint">支持多张</p>
+                        </div>
+                        <div class="preview-grid" id="productPreview"></div>
+                    </div>
+                    <input type="file" id="productInput"
+                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
+                        multiple>
+                </div>
+
+                <!-- 提示词输入 -->
+                <div class="card" style="display: flex; flex-direction: column; position: relative;">
+                    <div class="card-title">✏️ 生成提示词</div>
+                    <div style="flex: 1; display: flex; gap: 1rem;">
+                        <textarea id="promptInput" placeholder="例如: 将这件衣服穿在模特身上，室外场景，自然光，专业摄影..."
+                            style="flex: 1; min-height: 200px;"></textarea>
+
+                        <!-- 添加到队列按钮 -->
+                        <button class="btn btn-add-task" id="addTaskBtn" disabled
+                            style="width: 160px; align-self: stretch; font-size: 1.125rem; flex-shrink: 0;">
+                            添加到任务队列
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 参考图上传 -->
+                <div class="card">
+                    <div class="card-title">🖼️ 参考图片(可选)</div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <button class="btn btn-success" style="flex: 1;"
+                            onclick="document.getElementById('referenceInput').click()">
+                            选择参考图片
+                        </button>
+                        <button class="btn btn-success" style="flex: 1;"
+                            onclick="document.getElementById('referenceFolderInput').click()">
+                            📁 选择文件夹
+                        </button>
+                    </div>
+                    <div class="upload-area" id="referenceUploadArea">
+                        <button class="btn-clear" onclick="clearReferenceImages()">清除</button>
+                        <div class="upload-count-badge" id="referenceCountBadge">0 张</div>
+                        <div id="referencePlaceholder">
+                            <svg class="upload-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10">
+                                </path>
+                            </svg>
+                            <p class="upload-text">拖拽上传</p>
+                            <p class="upload-hint">背景参考</p>
+                        </div>
+                        <div class="preview-grid" id="referencePreview"></div>
+                    </div>
+                    <input type="file" id="referenceInput"
+                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
+                        multiple>
+                    <input type="file" id="referenceFolderInput"
+                        accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
+                        webkitdirectory multiple>
+                </div>
+            </div>
+        </div>
+
+        <!-- 板块4：任务队列区域（独立卡片）-->
+        <div class="main-operation-block" style="background: rgba(248, 250, 252, 0.8);">
+            <div class="queue-header">
+                <div class="queue-title">📋 任务队列</div>
+                <div class="queue-controls">
+                    <button class="btn btn-primary" id="startQueueBtn" disabled>▶️ 开始执行队列</button>
+                    <button class="btn btn-primary" id="pauseQueueBtn" style="display: none;">⏸️ 暂停</button>
+                    <button class="btn btn-primary" id="clearQueueBtn">🗑️ 清空队列</button>
+                </div>
+            </div>
+
+            <div class="queue-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="totalTasks">0</div>
+                    <div class="stat-label">总任务数</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="pendingTasks">0</div>
+                    <div class="stat-label">等待中</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="processingTasks">0</div>
+                    <div class="stat-label">进行中</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="completedTasks">0</div>
+                    <div class="stat-label">已完成</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="failedTasks">0</div>
+                    <div class="stat-label">失败</div>
+                </div>
+            </div>
+
+            <div class="task-list" id="taskList">
+                <div class="empty-state">
+                    <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
+                        </path>
+                    </svg>
+                    <p>暂无任务,请添加任务到队列</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ======== 使用Web Crypto API的AES-GCM加密 ========
+
+        // 生成加密密钥
+        async function getEncryptionKey() {
+            const password = 'CloudAI-Vision-Queue-2024-Secure-Key';
+            const encoder = new TextEncoder();
+            const passwordBuffer = encoder.encode(password);
+
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw',
+                passwordBuffer,
+                { name: 'PBKDF2' },
+                false,
+                ['deriveBits', 'deriveKey']
+            );
+
+            const salt = encoder.encode('CloudAI-Queue-Salt-2024');
+            return await crypto.subtle.deriveKey(
+                {
+                    name: 'PBKDF2',
+                    salt: salt,
+                    iterations: 100000,
+                    hash: 'SHA-256'
+                },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt', 'decrypt']
+            );
+        }
+
+        // AES-GCM加密函数
+        async function encryptData(data) {
+            try {
+                if (!data) return '';
+                const encoder = new TextEncoder();
+                const dataBuffer = encoder.encode(data);
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const key = await getEncryptionKey();
+                const encryptedBuffer = await crypto.subtle.encrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    dataBuffer
+                );
+                const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
+                combined.set(iv, 0);
+                combined.set(new Uint8Array(encryptedBuffer), iv.length);
+                return btoa(String.fromCharCode.apply(null, combined));
+            } catch (e) {
+                console.error('加密失败:', e);
+                return '';
+            }
+        }
+
+        // AES-GCM解密函数
+        async function decryptData(encryptedData) {
+            try {
+                if (!encryptedData) return '';
+                const combined = new Uint8Array(
+                    atob(encryptedData).split('').map(c => c.charCodeAt(0))
+                );
+                const iv = combined.slice(0, 12);
+                const data = combined.slice(12);
+                const key = await getEncryptionKey();
+                const decryptedBuffer = await crypto.subtle.decrypt(
+                    { name: 'AES-GCM', iv: iv },
+                    key,
+                    data
+                );
+                const decoder = new TextDecoder();
+                return decoder.decode(decryptedBuffer);
+            } catch (e) {
+                console.error('解密失败:', e);
+                return '';
+            }
+        }
+
+        // 安全存储函数
+        async function saveSecureConfig(key, value) {
+            if (value) {
+                const encrypted = await encryptData(value);
+                localStorage.setItem('secure_' + key, encrypted);
+            } else {
+                localStorage.removeItem('secure_' + key);
+            }
+        }
+
+        async function loadSecureConfig(key) {
+            const encrypted = localStorage.getItem('secure_' + key);
+            return encrypted ? await decryptData(encrypted) : '';
+        }
+
+        // ========== 全局变量 ==========
+        let productImages = [];
+        let referenceImages = [];
+        let taskQueue = [];
+        let isProcessing = false;
+        let currentTaskIndex = -1;
+
+        // ========== DOM元素 ==========
+        const apiEndpoint = document.getElementById('apiEndpoint');
+        const apiKey = document.getElementById('apiKey');
+        const modelName = document.getElementById('modelName');
+        const aspectRatio = document.getElementById('aspectRatio');
+        const concurrency = document.getElementById('concurrency');
+        const productInput = document.getElementById('productInput');
+        const referenceInput = document.getElementById('referenceInput');
+        const productUploadArea = document.getElementById('productUploadArea');
+        const referenceUploadArea = document.getElementById('referenceUploadArea');
+        const productPreview = document.getElementById('productPreview');
+        const referencePreview = document.getElementById('referencePreview');
+        const promptInput = document.getElementById('promptInput');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const startQueueBtn = document.getElementById('startQueueBtn');
+        const pauseQueueBtn = document.getElementById('pauseQueueBtn');
+        const clearQueueBtn = document.getElementById('clearQueueBtn');
+        const taskList = document.getElementById('taskList');
+
+        // ========== 页面加载时恢复配置 ==========
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 从加密存储中读取配置
+            const savedEndpoint = await loadSecureConfig('apiEndpoint');
+            const savedKey = await loadSecureConfig('apiKey');
+            const savedModel = await loadSecureConfig('modelName');
+
+            // 设置默认值或恢复保存的值
+            apiEndpoint.value = savedEndpoint || 'http://154.36.173.51:3000';
+            apiKey.value = savedKey || '';
+            modelName.value = savedModel || 'gemini-3-pro-image-preview';
+
+            checkAddTaskButton();
+        });
+
+        // ========== 保存配置到加密存储 ==========
+        apiEndpoint.addEventListener('change', async () => {
+            await saveSecureConfig('apiEndpoint', apiEndpoint.value);
+        });
+
+        apiKey.addEventListener('change', async () => {
+            await saveSecureConfig('apiKey', apiKey.value);
+        });
+
+        modelName.addEventListener('change', async () => {
+            await saveSecureConfig('modelName', modelName.value);
+        });
+
+        // ========== 产品图上传 ==========
+        productInput.addEventListener('change', (e) => {
+            handleFiles(Array.from(e.target.files), 'product');
+        });
+
+        productUploadArea.addEventListener('click', () => productInput.click());
+        productUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            productUploadArea.style.borderColor = 'var(--primary-600)';
+        });
+        productUploadArea.addEventListener('dragleave', () => {
+            productUploadArea.style.borderColor = 'var(--slate-300)';
+        });
+        productUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            productUploadArea.style.borderColor = 'var(--slate-300)';
+            handleFiles(Array.from(e.dataTransfer.files), 'product');
+        });
+
+        // ========== 参考图上传 ==========
+        referenceInput.addEventListener('change', (e) => {
+            handleFiles(Array.from(e.target.files), 'reference');
+            // 重置input值，允许重复选择相同文件
+            referenceInput.value = '';
+        });
+
+        // ========== 参考图文件夹选择 ==========
+        referenceFolderInput.addEventListener('change', (e) => {
+            handleFiles(Array.from(e.target.files), 'reference');
+            // 重置input值，允许重复选择相同文件夹
+            referenceFolderInput.value = '';
+        });
+
+        referenceUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            referenceUploadArea.style.borderColor = 'var(--primary-600)';
+        });
+        referenceUploadArea.addEventListener('dragleave', () => {
+            referenceUploadArea.style.borderColor = 'var(--slate-300)';
+        });
+        referenceUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            referenceUploadArea.style.borderColor = 'var(--slate-300)';
+            handleFiles(Array.from(e.dataTransfer.files), 'reference');
+        });
+
+        // ========== 处理文件上传 ==========
+        function handleFiles(files, type) {
+            const imageFiles = files.filter(f => f.type.startsWith('image/'));
+            const targetArray = type === 'product' ? productImages : referenceImages;
+            const previewElement = type === 'product' ? productPreview : referencePreview;
+            const placeholderElement = type === 'product' ? document.getElementById('productPlaceholder') : document.getElementById('referencePlaceholder');
+
+            imageFiles.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    targetArray.push({
+                        file: file,
+                        dataUrl: e.target.result,
+                        name: file.name
+                    });
+                    updatePreview(type);
+                    checkAddTaskButton();
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // ========== 更新预览 ==========
+        function updatePreview(type) {
+            const targetArray = type === 'product' ? productImages : referenceImages;
+            const previewElement = type === 'product' ? productPreview : referencePreview;
+            const placeholderElement = type === 'product' ? document.getElementById('productPlaceholder') : document.getElementById('referencePlaceholder');
+
+            previewElement.innerHTML = '';
+
+            if (targetArray.length > 0) {
+                placeholderElement.style.display = 'none';
+                if (type === 'reference') {
+                    document.getElementById('referenceCountBadge').classList.add('active');
+                    document.getElementById('referenceCountBadge').textContent = `${targetArray.length} 张`;
+                    // 显示清除按钮
+                    document.querySelector('#referenceUploadArea .btn-clear').classList.add('active');
+                }
+            } else {
+                placeholderElement.style.display = 'flex';
+                if (type === 'reference') {
+                    document.getElementById('referenceCountBadge').classList.remove('active');
+                    // 隐藏清除按钮
+                    document.querySelector('#referenceUploadArea .btn-clear').classList.remove('active');
+                }
+            }
+
+            targetArray.forEach((img, index) => {
+                const div = document.createElement('div');
+                div.className = 'preview-item';
+                div.innerHTML = `
+                    <img src="${img.dataUrl}" alt="${type}${index + 1}">
+                    <button class="remove-btn" onclick="event.stopPropagation(); removeImage('${type}', ${index})">×</button>
+                `;
+                previewElement.appendChild(div);
+            });
+        }
+
+        // ========== 删除图片 ==========
+        function removeImage(type, index) {
+            const targetArray = type === 'product' ? productImages : referenceImages;
+            targetArray.splice(index, 1);
+            updatePreview(type);
+            checkAddTaskButton();
+        }
+
+        // ========== 清除所有参考图片 ==========
+        function clearReferenceImages() {
+            if (referenceImages.length === 0) {
+                return;
+            }
+            referenceImages = [];
+            updatePreview('reference');
+            checkAddTaskButton();
+        }
+
+        // ========== 检查是否可以添加任务 ==========
+        function checkAddTaskButton() {
+            const hasProduct = productImages.length > 0;
+            const hasPrompt = promptInput.value.trim().length > 0;
+            const hasApi = apiEndpoint.value.trim().length > 0 && apiKey.value.trim().length > 0;
+            addTaskBtn.disabled = !(hasProduct && hasPrompt && hasApi);
+        }
+
+        promptInput.addEventListener('input', checkAddTaskButton);
+        apiEndpoint.addEventListener('input', checkAddTaskButton);
+        apiKey.addEventListener('input', checkAddTaskButton);
+
+        // ========== 添加任务到队列 ==========
+        addTaskBtn.addEventListener('click', () => {
+            const task = {
+                id: Date.now(),
+                name: `批次_${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
+                productImages: productImages.map(img => ({
+                    dataUrl: img.dataUrl,
+                    name: img.name,
+                    mimeType: img.file.type
+                })),
+                referenceImages: referenceImages.map(img => ({
+                    dataUrl: img.dataUrl,
+                    name: img.name,
+                    mimeType: img.file.type
+                })),
+                prompt: promptInput.value.trim(),
+                status: 'pending',
+                progress: 0,
+                results: [],
+                createdAt: new Date().toISOString()
+            };
+
+            taskQueue.push(task);
+            renderTaskList();
+            updateStats();
+            startQueueBtn.disabled = false;
+
+            alert(`任务已添加! 产品图: ${productImages.length}张`);
+        });
+
+        // ========== 渲染任务列表 ==========
+        function renderTaskList() {
+            taskList.innerHTML = '';
+
+            if (taskQueue.length === 0) {
+                taskList.innerHTML = `
+                    <div class="empty-state">
+                        <svg class="empty-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p>暂无任务,请添加任务到队列</p>
+                    </div>
+                `;
+                return;
+            }
+
+            taskQueue.forEach((task, index) => {
+                const taskElement = document.createElement('div');
+                taskElement.className = `task-item ${task.status}`;
+                taskElement.innerHTML = `
+                    <div class="task-header">
+                        <div class="task-title">${task.name}</div>
+                        <div class="task-status ${task.status}">
+                            ${getStatusText(task.status)}
+                        </div>
+                    </div>
+                    <div class="task-info">
+                        <span>🖼️ 产品图: ${task.productImages.length}张</span>
+                        <span>📝 参考图: ${task.referenceImages.length}张</span>
+                        <span>🕐 创建: ${new Date(task.createdAt).toLocaleTimeString()}</span>
+                    </div>
+                    ${task.status === 'processing' || task.status === 'completed' ? `
+                        <div class="task-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${task.progress}%"></div>
+                            </div>
+                            <div class="progress-text">${task.progress}% (${task.results.length}/${task.productImages.length})</div>
+                        </div>
+                    ` : ''}
+                    ${task.results.length > 0 ? `
+                        <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                            <div style="font-weight: 600; color: var(--slate-700);">生成结果 (${task.results.length}张)</div>
+                            <button class="btn btn-success btn-sm" onclick="downloadAllAsZip(${index})" style="padding: 0.5rem 1rem;">
+                                📦 打包下载ZIP
+                            </button>
+                        </div>
+                        <div class="task-results">
+                            ${task.results.map((result, i) => `
+                                <div class="result-item">
+                                    <img src="${result.imageUrl}" alt="结果${i + 1}">
+                                    <div class="result-actions">
+                                        <button class="btn btn-primary btn-sm" onclick="downloadImage('${result.imageUrl}', '${result.originalFileName || task.name + '_' + (i + 1) + '.png'}')">下载</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                `;
+                taskList.appendChild(taskElement);
+            });
+        }
+
+        // ========== 获取状态文本 ==========
+        function getStatusText(status) {
+            const statusMap = {
+                pending: '⏳ 等待中',
+                processing: '🔄 进行中',
+                completed: '✅ 已完成',
+                failed: '❌ 失败'
+            };
+            return statusMap[status] || status;
+        }
+
+        // ========== 更新统计 ==========
+        function updateStats() {
+            document.getElementById('totalTasks').textContent = taskQueue.length;
+            document.getElementById('pendingTasks').textContent = taskQueue.filter(t => t.status === 'pending').length;
+            document.getElementById('processingTasks').textContent = taskQueue.filter(t => t.status === 'processing').length;
+            document.getElementById('completedTasks').textContent = taskQueue.filter(t => t.status === 'completed').length;
+            document.getElementById('failedTasks').textContent = taskQueue.filter(t => t.status === 'failed').length;
+        }
+
+        // ========== 开始执行队列 ==========
+        startQueueBtn.addEventListener('click', async () => {
+            if (isProcessing) return;
+            isProcessing = true;
+            startQueueBtn.style.display = 'none';
+            pauseQueueBtn.style.display = 'inline-flex';
+
+            await processQueue();
+
+            isProcessing = false;
+            startQueueBtn.style.display = 'inline-flex';
+            pauseQueueBtn.style.display = 'none';
+        });
+
+        // ========== 暂停队列 ==========
+        pauseQueueBtn.addEventListener('click', () => {
+            isProcessing = false;
+            startQueueBtn.style.display = 'inline-flex';
+            pauseQueueBtn.style.display = 'none';
+        });
+
+        // ========== 清空队列 ==========
+        clearQueueBtn.addEventListener('click', () => {
+            if (confirm('确定要清空所有任务吗?')) {
+                taskQueue = [];
+                renderTaskList();
+                updateStats();
+                startQueueBtn.disabled = true;
+            }
+        });
+
+        // ========== 处理队列 ==========
+        async function processQueue() {
+            for (let i = 0; i < taskQueue.length; i++) {
+                if (!isProcessing) break;
+
+                const task = taskQueue[i];
+                if (task.status !== 'pending') continue;
+
+                task.status = 'processing';
+                renderTaskList();
+                updateStats();
+
+                try {
+                    await processTask(task);
+                    task.status = 'completed';
+                } catch (error) {
+                    console.error('任务失败:', error);
+                    task.status = 'failed';
+                }
+
+                renderTaskList();
+                updateStats();
+            }
+        }
+
+        // ========== 格式化时间戳 ==========
+        function getTimeString() {
+            const now = new Date();
+            return now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+        }
+
+        // ========== 处理单个任务 ==========
+        async function processTask(task) {
+            const endpoint = `${apiEndpoint.value.trim()}/v1beta/models/${modelName.value}:generate`;
+            const maxConcurrent = parseInt(concurrency.value) || 3;
+
+            task.results = [];
+
+            // 构建所有要生成的图片任务
+            const allGenerationTasks = [];
+
+            task.productImages.forEach((productImg, productIndex) => {
+                // 如果有参考图，为每张参考图生成一张结果
+                if (task.referenceImages.length > 0) {
+                    task.referenceImages.forEach((refImg, refIndex) => {
+                        allGenerationTasks.push({
+                            productImg,
+                            productIndex,
+                            refImg,
+                            refIndex
+                        });
+                    });
+                } else {
+                    // 如果没有参考图，只生成一张
+                    allGenerationTasks.push({
+                        productImg,
+                        productIndex,
+                        refImg: null,
+                        refIndex: -1
+                    });
+                }
+            });
+
+            const totalTasks = allGenerationTasks.length;
+            const startTime = Date.now();
+            const startTimeStr = getTimeString();
+
+            console.log(`\n┌─────────────────────────────────────────────────────`);
+            console.log(`│ 📋 开始处理任务: ${task.name}`);
+            console.log(`│ 🕐 开始时间: ${startTimeStr}`);
+            console.log(`│ 📊 总共需要生成: ${totalTasks} 张图片`);
+            console.log(`│ ⚙️  并发设置: 每批 ${maxConcurrent} 个`);
+            console.log(`└─────────────────────────────────────────────────────\n`);
+
+            // 分批并发处理
+            for (let i = 0; i < totalTasks; i += maxConcurrent) {
+                const batch = allGenerationTasks.slice(i, i + maxConcurrent);
+                const batchNum = Math.floor(i / maxConcurrent) + 1;
+                console.log(`🚀 [${getTimeString()}] 开始第 ${batchNum} 批，并发调用 ${batch.length} 个API...\n`);
+
+                const promises = batch.map((taskItem, batchIndex) => {
+                    const taskNum = i + batchIndex + 1;
+                    return generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks);
+                });
+
+                const results = await Promise.all(promises);
+                task.results.push(...results);
+
+                task.progress = Math.round((task.results.length / totalTasks) * 100);
+                console.log(`\n✅ [${getTimeString()}] 第 ${batchNum} 批完成，当前进度: ${task.progress}% (${task.results.length}/${totalTasks})\n`);
+                renderTaskList();
+            }
+
+            const endTime = Date.now();
+            const endTimeStr = getTimeString();
+            const totalSeconds = ((endTime - startTime) / 1000).toFixed(2);
+
+            console.log(`┌─────────────────────────────────────────────────────`);
+            console.log(`│ 🎉 任务完成！`);
+            console.log(`│ 🕐 开始时间: ${startTimeStr}`);
+            console.log(`│ 🕐 结束时间: ${endTimeStr}`);
+            console.log(`│ ⏱️  总耗时: ${totalSeconds} 秒`);
+            console.log(`│ 📊 生成图片: ${task.results.length} 张`);
+            console.log(`│ ⚡ 平均速度: ${(totalSeconds / task.results.length).toFixed(2)} 秒/张`);
+            console.log(`└─────────────────────────────────────────────────────\n`);
+        }
+
+        // ========== 生成单张图片 ==========
+        async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks) {
+            const { productImg, productIndex, refImg, refIndex } = taskItem;
+
+            // 构建提示词
+            let finalPrompt = task.prompt;
+            if (refImg) {
+                finalPrompt += ` - 产品图${productIndex + 1}: ${productImg.name}, 参考图${refIndex + 1}`;
+            } else {
+                finalPrompt += ` - 产品图${productIndex + 1}: ${productImg.name}`;
+            }
+
+            const productImageBase64 = productImg.dataUrl.split(',')[1];
+
+            const requestBody = {
+                contents: [{
+                    parts: [{
+                        text: finalPrompt
+                    }, {
+                        inline_data: {
+                            mime_type: productImg.mimeType,
+                            data: productImageBase64
+                        }
+                    }]
+                }],
+                generationConfig: {
+                    aspectRatio: aspectRatio.value
+                }
+            };
+
+            // 添加参考图（单张）
+            if (refImg) {
+                requestBody.contents[0].parts.push({
+                    inline_data: {
+                        mime_type: refImg.mimeType,
+                        data: refImg.dataUrl.split(',')[1]
+                    }
+                });
+            }
+
+            const apiStartTime = Date.now();
+            console.log(`📤 [${getTimeString()}] API请求 ${taskNum}/${totalTasks}:`, {
+                endpoint: endpoint,
+                model: modelName.value,
+                aspectRatio: aspectRatio.value,
+                prompt: finalPrompt.substring(0, 100) + '...',
+                productImage: productImg.name,
+                referenceImage: refImg ? `参考图${refIndex + 1}` : '无'
+            });
+
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey.value.trim()}`
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const apiEndTime = Date.now();
+            const apiDuration = ((apiEndTime - apiStartTime) / 1000).toFixed(2);
+
+            console.log(`📥 [${getTimeString()}] API响应 ${taskNum}/${totalTasks}: ${response.status} ${response.statusText} (耗时: ${apiDuration}秒)`);
+
+            const responseText = await response.text();
+            console.log(`📄 API响应内容 ${taskNum}/${totalTasks}:`, responseText.substring(0, 500));
+
+            if (!response.ok) {
+                throw new Error(`图片${taskNum} API请求失败 (${response.status})\n响应: ${responseText.substring(0, 200)}`);
+            }
+
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (e) {
+                throw new Error(`图片${taskNum} 无法解析API响应为JSON`);
+            }
+
+            // 检查是否有内容被阻止
+            if (data.promptFeedback && data.promptFeedback.blockReason) {
+                const blockReason = data.promptFeedback.blockReason;
+                throw new Error(`图片${taskNum} 生成被阻止: ${blockReason}。建议更换图片或简化提示词`);
+            }
+
+            if (data.candidates && data.candidates[0]?.content?.parts) {
+                const parts = data.candidates[0].content.parts;
+                const imagePart = parts.find(part => part.inlineData || part.inline_data);
+                if (imagePart) {
+                    const imageData = imagePart.inlineData || imagePart.inline_data;
+                    const mimeType = imageData.mimeType || imageData.mime_type || 'image/png';
+                    const totalDuration = ((Date.now() - apiStartTime) / 1000).toFixed(2);
+                    console.log(`✅ [${getTimeString()}] 图片${taskNum} 生成成功！MIME类型: ${mimeType}, 总耗时: ${totalDuration}秒`);
+                    return {
+                        imageUrl: `data:${mimeType};base64,${imageData.data}`,
+                        productName: productImg.name,
+                        originalFileName: refImg ? refImg.name : productImg.name  // 使用参考图文件名，无参考图时用产品图名
+                    };
+                }
+            }
+
+            console.error(`❌ 无法提取图片${taskNum}的数据，完整响应:`, data);
+            throw new Error(`无法提取图片${taskNum}数据`);
+        }
+
+        // ========== 下载图片 ==========
+        function downloadImage(url, filename) {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // ========== 打包下载为ZIP ==========
+        async function downloadAllAsZip(taskIndex) {
+            const task = taskQueue[taskIndex];
+            if (!task || !task.results || task.results.length === 0) {
+                alert('没有可下载的图片');
+                return;
+            }
+
+            try {
+                // 创建ZIP实例
+                const zip = new JSZip();
+                const folder = zip.folder(task.name);
+
+                // 添加每张图片到ZIP
+                for (let i = 0; i < task.results.length; i++) {
+                    const result = task.results[i];
+                    const imageUrl = result.imageUrl;
+
+                    // 从data URL中提取base64数据
+                    const base64Data = imageUrl.split(',')[1];
+
+                    // 使用顺序编号作为文件名
+                    const filename = `${i + 1}.png`;
+
+                    // 添加文件到ZIP
+                    folder.file(filename, base64Data, { base64: true });
+                }
+
+                // 生成ZIP文件
+                console.log(`📦 正在打包 ${task.results.length} 张图片...`);
+                const content = await zip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 6 }
+                });
+
+                // 下载ZIP文件
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `${task.name}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+
+                console.log(`✅ ZIP文件已生成: ${task.name}.zip`);
+            } catch (error) {
+                console.error('打包失败:', error);
+                alert('打包下载失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+
+</html>
