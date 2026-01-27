@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>云创AI视觉 - 队列批量生成系统</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
 
@@ -17,14 +18,14 @@
         </div>
 
         <div class="main-operation-block">
-            <div class="card-title">⚙️ API配置</div>
+            <div class="card-title">⚙️ 配置</div>
             <div class="api-config-grid">
                 <div class="form-group">
-                    <label for="apiEndpoint">API端点</label>
-                    <input type="password" id="apiEndpoint" placeholder="输入您的端口">
+                    <label for="apiEndpoint">端点</label>
+                    <input type="password" id="apiEndpoint" placeholder="输入您的端口" value="/api/proxy" disabled>
                 </div>
                 <div class="form-group">
-                    <label for="apiKey">API密钥</label>
+                    <label for="apiKey">密钥</label>
                     <input type="password" id="apiKey" placeholder="输入您的密钥">
                 </div>
                 <div class="form-group">
@@ -51,7 +52,7 @@
                             4-6)</span></label>
                     <input type="number" id="concurrency" value="4" min="1" max="10">
                     <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--slate-600);">
-                        💡 提示：并发数越高越快，但API可能限制并发请求数
+                        💡 提示：任务队列中参考图片有几张并发数就选几张！
                     </div>
                 </div>
             </div>
@@ -60,7 +61,7 @@
         <div class="main-operation-block">
             <div class="input-section">
                 <div class="card">
-                    <div class="card-title">📦 上传产品图</div>
+                    <div class="card-title">📦 上传产品图【图1】</div>
                     <button class="btn btn-primary" style="width: 100%; margin-bottom: 0.5rem;"
                         onclick="document.getElementById('productInput').click()">
                         选择产品图片
@@ -82,21 +83,8 @@
                         multiple>
                 </div>
 
-                <div class="card" style="display: flex; flex-direction: column; position: relative;">
-                    <div class="card-title">✏️ 生成提示词</div>
-                    <div style="flex: 1; display: flex; gap: 1rem;">
-                        <textarea id="promptInput" placeholder="例如: 将这件衣服穿在模特身上，室外场景，自然光，专业摄影..."
-                            style="flex: 1; min-height: 200px;"></textarea>
-
-                        <button class="btn btn-add-task" id="addTaskBtn" disabled
-                            style="width: 160px; align-self: stretch; font-size: 1.125rem; flex-shrink: 0;">
-                            添加到任务队列
-                        </button>
-                    </div>
-                </div>
-
                 <div class="card">
-                    <div class="card-title">🖼️ 参考图片(可选)</div>
+                    <div class="card-title">🖼️ 参考图片(可选)【图2】</div>
                     <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
                         <button class="btn btn-success" style="flex: 1;"
                             onclick="document.getElementById('referenceInput').click()">
@@ -128,6 +116,19 @@
                         accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.heic,image/jpeg,image/png,image/gif,image/bmp,image/webp,image/heic"
                         webkitdirectory multiple>
                 </div>
+
+                <div class="card" style="display: flex; flex-direction: column; position: relative;">
+                    <div class="card-title">✏️ 生成提示词【4K画质】</div>
+                    <div style="flex: 1; display: flex; gap: 1rem;">
+                        <textarea id="promptInput" placeholder="参考提示词：将图2的衣服替换成图1，保持图2衣服的造型和姿势不改变"
+                            style="flex: 1; min-height: 200px;"></textarea>
+
+                        <button class="btn btn-add-task" id="addTaskBtn" disabled
+                            style="width: 160px; align-self: stretch; font-size: 1.125rem; flex-shrink: 0;">
+                            添加到任务队列
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -135,9 +136,12 @@
             <div class="queue-header">
                 <div class="queue-title">📋 任务队列</div>
                 <div class="queue-controls">
-                    <button class="btn btn-primary" id="startQueueBtn" disabled>▶️ 开始执行队列</button>
-                    <button class="btn btn-primary" id="pauseQueueBtn" style="display: none;">⏸️ 暂停</button>
-                    <button class="btn btn-primary" id="clearQueueBtn">🗑️ 清空队列</button>
+                    <button class="btn btn-primary" id="startQueueBtn" disabled style="background: var(--success);">▶️
+                        开始执行队列</button>
+                    <button class="btn btn-primary" id="pauseQueueBtn"
+                        style="display: none; background: var(--warning);">⏸️ 暂停</button>
+                    <button class="btn btn-primary" id="clearQueueBtn" style="background: var(--primary-600);">🗑️
+                        清空队列</button>
                 </div>
             </div>
 
@@ -177,6 +181,7 @@
         </div>
     </div>
 
+    <div id="globalImagePreview" class="large-preview-floating"></div>
     <script src="js/script.js"></script>
 </body>
 

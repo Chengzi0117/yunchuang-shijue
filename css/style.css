@@ -183,6 +183,15 @@ textarea {
     color: var(--slate-900);
 }
 
+input:disabled,
+select:disabled,
+textarea:disabled {
+    background-color: var(--slate-100) !important;
+    color: var(--slate-400);
+    cursor: not-allowed;
+    border-color: var(--slate-200);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -213,6 +222,24 @@ textarea {
     position: relative;
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+.upload-area::-webkit-scrollbar {
+    width: 6px;
+}
+
+.upload-area::-webkit-scrollbar-track {
+    background: var(--slate-100);
+    border-radius: 3px;
+}
+
+.upload-area::-webkit-scrollbar-thumb {
+    background: var(--slate-400);
+    border-radius: 3px;
+}
+
+.upload-area::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-600);
 }
 
 .upload-area::-webkit-scrollbar {
@@ -274,7 +301,7 @@ input[type="file"] {
     position: relative;
     aspect-ratio: 1;
     border-radius: var(--radius-md);
-    overflow: hidden;
+    /* overflow: hidden; Removed to allow hover preview */
     background: var(--slate-100);
     border: 2px solid var(--slate-200);
 }
@@ -452,17 +479,191 @@ input[type="file"] {
     border-color: var(--error);
 }
 
-.task-header {
+.task-main-row {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    gap: 2rem;
+    width: 100%;
+}
+
+.task-left-info {
+    flex-shrink: 0;
+    width: 240px;
+}
+
+.task-title-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.task-stats-bar {
+    font-size: 0.8125rem;
+    color: var(--slate-500);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.task-middle-preview {
+    flex: 1;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.inline-preview-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.preview-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--slate-400);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mini-thumb-list {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.thumb-wrapper {
+    position: relative;
+    cursor: zoom-in;
+}
+
+.mini-img {
+    width: 42px;
+    height: 42px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--slate-200);
+    background: white;
+    transition: transform 0.2s;
+}
+
+.thumb-wrapper:hover .mini-img {
+    border-color: var(--primary-400);
+    transform: scale(1.05);
+}
+
+.large-preview-floating {
+    display: none;
+    position: fixed;
+    width: 320px;
+    height: 320px;
+    background: white;
+    border-radius: var(--radius-md);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid var(--slate-200);
+    z-index: 9999;
+    padding: 6px;
+    pointer-events: none;
+    animation: fadeInScale 0.15s ease-out;
+}
+
+.large-preview-floating img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Removed old .large-preview as it's replaced by the global floating one */
+
+.more-indicator {
+    font-size: 0.75rem;
+    color: var(--slate-500);
+    background: var(--slate-100);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.mini-prompt-text {
+    font-size: 0.875rem;
+    color: var(--slate-600);
+    max-width: 320px;
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.mini-prompt-text.editable {
+    cursor: text;
+    background: white;
+    border: 1px solid var(--slate-300);
+    padding: 0.5rem;
+    min-width: 240px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.mini-prompt-text.editable:hover {
+    background: var(--slate-50);
+    border-style: solid;
+    border-color: var(--primary-400);
+}
+
+.mini-prompt-text.editable:focus {
+    outline: none;
+    background: white;
+    color: var(--slate-900);
+    box-shadow: 0 0 0 2px var(--primary-200);
+    border-color: var(--primary-500);
+    border-style: solid;
+    white-space: nowrap;
+    overflow-x: auto;
+    text-overflow: clip;
+}
+
+.task-right-actions {
+    flex-shrink: 0;
 }
 
 .task-title {
     font-size: 1rem;
     font-weight: 600;
     color: var(--slate-900);
+}
+
+.btn-delete-task {
+    padding: 0.4rem;
+    background: transparent;
+    color: var(--slate-400);
+    border: none;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-delete-task:hover {
+    background: var(--error);
+    color: white;
 }
 
 .task-status {
