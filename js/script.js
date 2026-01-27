@@ -109,6 +109,79 @@ const pauseQueueBtn = document.getElementById('pauseQueueBtn');
 const clearQueueBtn = document.getElementById('clearQueueBtn');
 const taskList = document.getElementById('taskList');
 
+// IndexedDB 管理器 - 解决 localStorage 5MB 限制问题
+const dbManager = {
+    dbName: 'CloudAI_Vision_DB',
+    version: 1,
+    storeName: 'tasks',
+    db: null,
+
+    async init() {
+        if (this.db) return this.db;
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName, { keyPath: 'id' });
+                }
+            };
+        });
+    },
+
+    async saveTasks(tasks) {
+        await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const clearReq = store.clear();
+            clearReq.onsuccess = () => {
+                if (tasks.length === 0) {
+                    resolve();
+                    return;
+                }
+                let count = 0;
+                tasks.forEach(task => {
+                    const addReq = store.add(task);
+                    addReq.onsuccess = () => {
+                        count++;
+                        if (count === tasks.length) resolve();
+                    };
+                    addReq.onerror = () => reject(addReq.error);
+                });
+            };
+            clearReq.onerror = () => reject(clearReq.error);
+        });
+    },
+
+    async loadTasks() {
+        await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async clearTasks() {
+        await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+};
+
 window.addEventListener('DOMContentLoaded', async () => {
     const savedKey = await loadSecureConfig('apiKey');
     const savedModel = await loadSecureConfig('modelName');
@@ -117,7 +190,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     apiKey.value = savedKey || '';
     modelName.value = savedModel || 'gemini-3-pro-image-preview';
 
-    loadQueueFromStorage();
+    await loadQueueFromStorage();
     checkAddTaskButton();
 });
 
@@ -271,6 +344,7 @@ addTaskBtn.addEventListener('click', () => {
             mimeType: img.file.type
         })),
         prompt: promptInput.value.trim().endsWith('4K高清画质') ? promptInput.value.trim() : promptInput.value.trim() + ', 4K高清画质',
+        aspectRatio: aspectRatio.value,
         status: 'pending',
         progress: 0,
         results: [],
@@ -458,10 +532,10 @@ pauseQueueBtn.addEventListener('click', () => {
     pauseQueueBtn.style.display = 'none';
 });
 
-clearQueueBtn.addEventListener('click', () => {
+clearQueueBtn.addEventListener('click', async () => {
     if (confirm('确定要清空所有任务吗?')) {
         taskQueue = [];
-        localStorage.removeItem('cloudai_task_queue');
+        await dbManager.clearTasks();
         renderTaskList();
         updateStats();
         startQueueBtn.disabled = true;
@@ -571,6 +645,8 @@ async function processTask(task) {
 
 async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks) {
     const { productImg, productIndex, refImg, refIndex } = taskItem;
+    const maxRetries = 3;
+    let retryCount = 0;
 
     let finalPrompt = task.prompt;
     if (refImg) {
@@ -580,7 +656,6 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
     }
 
     const productImageBase64 = productImg.dataUrl.split(',')[1];
-
     const requestBody = {
         contents: [{
             parts: [{
@@ -593,7 +668,7 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
             }]
         }],
         generationConfig: {
-            aspectRatio: aspectRatio.value
+            aspect_ratio: task.aspectRatio || aspectRatio.value
         }
     };
 
@@ -606,67 +681,87 @@ async function generateSingleImage(task, taskItem, endpoint, taskNum, totalTasks
         });
     }
 
-    const apiStartTime = Date.now();
-    console.log(`📤[${getTimeString()}] API请求 ${taskNum}/${totalTasks}:`, {
-        endpoint: endpoint,
-        model: modelName.value,
-        aspectRatio: aspectRatio.value,
-        prompt: finalPrompt.substring(0, 100) + '...',
-        productImage: productImg.name,
-        referenceImage: refImg ? `参考图${refIndex + 1}` : '无'
-    });
+    while (retryCount <= maxRetries) {
+        try {
+            const apiStartTime = Date.now();
+            console.log(`📤[${getTimeString()}] API请求 ${taskNum}/${totalTasks}${retryCount > 0 ? ` (重试第${retryCount}次)` : ''}:`, {
+                endpoint: endpoint,
+                model: modelName.value,
+                aspectRatio: task.aspectRatio || aspectRatio.value,
+                prompt: finalPrompt.substring(0, 100) + '...',
+                productImage: productImg.name,
+                referenceImage: refImg ? `参考图${refIndex + 1}` : '无'
+            });
 
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey.value.trim()}`
-        },
-        body: JSON.stringify(requestBody)
-    });
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey.value.trim()}`
+                },
+                body: JSON.stringify(requestBody)
+            });
 
-    const apiEndTime = Date.now();
-    const apiDuration = ((apiEndTime - apiStartTime) / 1000).toFixed(2);
+            const apiEndTime = Date.now();
+            const apiDuration = ((apiEndTime - apiStartTime) / 1000).toFixed(2);
 
-    console.log(`📥 [${getTimeString()}] API响应 ${taskNum}/${totalTasks}: ${response.status} ${response.statusText} (耗时: ${apiDuration}秒)`);
+            const responseText = await response.text();
+            console.log(`📥 [${getTimeString()}] API响应 ${taskNum}/${totalTasks}: ${response.status} ${response.statusText} (耗时: ${apiDuration}秒)`);
 
-    const responseText = await response.text();
-    console.log(`📄 API响应内容 ${taskNum}/${totalTasks}:`, responseText.substring(0, 500));
+            if (!response.ok) {
+                // 针对 502/503/504 或 请求超时进行重试
+                if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
+                    const delay = Math.pow(2, retryCount) * 2000; // 指数级等待 2s, 4s, 8s
+                    console.warn(`⚠️ API 报错 ${response.status}，正在进行第 ${retryCount + 1} 次重试，等待 ${delay / 1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    retryCount++;
+                    continue;
+                }
+                throw new Error(`图片${taskNum} API请求失败 (${response.status})\n响应: ${responseText.substring(0, 200)}`);
+            }
 
-    if (!response.ok) {
-        throw new Error(`图片${taskNum} API请求失败 (${response.status})\n响应: ${responseText.substring(0, 200)}`);
-    }
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (e) {
+                throw new Error(`图片${taskNum} 无法解析API响应为JSON`);
+            }
 
-    let data;
-    try {
-        data = JSON.parse(responseText);
-    } catch (e) {
-        throw new Error(`图片${taskNum} 无法解析API响应为JSON`);
-    }
+            if (data.promptFeedback && data.promptFeedback.blockReason) {
+                const blockReason = data.promptFeedback.blockReason;
+                throw new Error(`图片${taskNum} 生成被阻止: ${blockReason}。建议更换图片或简化提示词`);
+            }
 
-    if (data.promptFeedback && data.promptFeedback.blockReason) {
-        const blockReason = data.promptFeedback.blockReason;
-        throw new Error(`图片${taskNum} 生成被阻止: ${blockReason}。建议更换图片或简化提示词`);
-    }
+            if (data.candidates && data.candidates[0]?.content?.parts) {
+                const parts = data.candidates[0].content.parts;
+                const imagePart = parts.find(part => part.inlineData || part.inline_data);
+                if (imagePart) {
+                    const imageData = imagePart.inlineData || imagePart.inline_data;
+                    const mimeType = imageData.mimeType || imageData.mime_type || 'image/png';
+                    const totalDuration = ((Date.now() - apiStartTime) / 1000).toFixed(2);
+                    console.log(`✅ [${getTimeString()}] 图片${taskNum} 生成成功！MIME类型: ${mimeType}, 总耗时: ${totalDuration}秒`);
+                    return {
+                        imageUrl: `data:${mimeType};base64,${imageData.data}`,
+                        productName: productImg.name,
+                        originalFileName: refImg ? refImg.name : productImg.name
+                    };
+                }
+            }
 
-    if (data.candidates && data.candidates[0]?.content?.parts) {
-        const parts = data.candidates[0].content.parts;
-        const imagePart = parts.find(part => part.inlineData || part.inline_data);
-        if (imagePart) {
-            const imageData = imagePart.inlineData || imagePart.inline_data;
-            const mimeType = imageData.mimeType || imageData.mime_type || 'image/png';
-            const totalDuration = ((Date.now() - apiStartTime) / 1000).toFixed(2);
-            console.log(`✅ [${getTimeString()}] 图片${taskNum} 生成成功！MIME类型: ${mimeType}, 总耗时: ${totalDuration}秒`);
-            return {
-                imageUrl: `data:${mimeType};base64,${imageData.data}`,
-                productName: productImg.name,
-                originalFileName: refImg ? refImg.name : productImg.name
-            };
+            console.error(`❌ 无法提取图片${taskNum}的数据，完整响应:`, data);
+            throw new Error(`无法提取图片${taskNum}数据`);
+
+        } catch (error) {
+            if (retryCount < maxRetries && error.message.includes('fetch')) {
+                const delay = Math.pow(2, retryCount) * 2000;
+                console.warn(`⚠️ 网络连接失败，正在重试... ${delay / 1000}s`);
+                await new Promise(r => setTimeout(r, delay));
+                retryCount++;
+                continue;
+            }
+            throw error;
         }
     }
-
-    console.error(`❌ 无法提取图片${taskNum}的数据，完整响应:`, data);
-    throw new Error(`无法提取图片${taskNum}数据`);
 }
 
 function downloadImage(url, filename) {
@@ -755,23 +850,20 @@ function hideGlobalPreview() {
     preview.style.display = 'none';
 }
 
-// 队列持久化功能
-function saveQueueToStorage() {
+// 队列持久化功能 - 使用 IndexedDB 替代 localStorage
+async function saveQueueToStorage() {
     try {
-        // 由于 localStorage 大小限制，通常只保存任务元数据
-        // 如果图片是 Base64，大量任务可能超出 5MB 限制
-        // 这里尽可能保存，实际应用建议使用 IndexedDB
-        localStorage.setItem('cloudai_task_queue', JSON.stringify(taskQueue));
+        await dbManager.saveTasks(taskQueue);
     } catch (e) {
-        console.warn('任务队列过大，自动保存失败:', e);
+        console.error('任务队列同步到数据库失败:', e);
     }
 }
 
-function loadQueueFromStorage() {
-    const saved = localStorage.getItem('cloudai_task_queue');
-    if (saved) {
-        try {
-            taskQueue = JSON.parse(saved);
+async function loadQueueFromStorage() {
+    try {
+        const savedTasks = await dbManager.loadTasks();
+        if (savedTasks && savedTasks.length > 0) {
+            taskQueue = savedTasks;
             // 恢复后如果是进行中，重置为等待中，因为进程已中断
             taskQueue.forEach(t => {
                 if (t.status === 'processing') t.status = 'pending';
@@ -779,8 +871,8 @@ function loadQueueFromStorage() {
             renderTaskList();
             updateStats();
             if (taskQueue.length > 0) startQueueBtn.disabled = false;
-        } catch (e) {
-            console.error('恢复任务队列失败:', e);
         }
+    } catch (e) {
+        console.error('从数据库恢复任务队列失败:', e);
     }
 }
