@@ -899,7 +899,7 @@
             const savedModel = await loadSecureConfig('modelName');
 
             // 设置默认值或恢复保存的值
-            apiEndpoint.value = savedEndpoint || 'http://154.36.173.51:3000';
+            apiEndpoint.value = savedEndpoint || '/api-proxy/';
             apiKey.value = savedKey || '';
             modelName.value = savedModel || 'gemini-3-pro-image-preview';
 
