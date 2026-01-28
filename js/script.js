@@ -113,6 +113,7 @@ const endpointManager = {
     sortedList: [],
     best: '/api/proxy1',
     isLocked: false,
+    isProbed: false, // 是否已经完成过初次测速
 
     async probe() {
         if (this.isLocked) return;
@@ -134,6 +135,7 @@ const endpointManager = {
         results.sort((a, b) => a.latency - b.latency);
         this.sortedList = results.map(r => r.url);
         this.best = this.sortedList[0];
+        this.isProbed = true; // 标记已完成测速
         console.log('🚀 竞速排名:', results.map(r => `${r.url}(${r.latency}ms)`).join(' > '));
         return results; // 返回结果以便 UI 使用
     },
@@ -346,7 +348,16 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 
 apiKey.addEventListener('change', async () => {
-    await saveSecureConfig('apiKey', apiKey.value);
+    const val = apiKey.value.trim();
+    await saveSecureConfig('apiKey', val);
+
+    // 如果之前没测过，或者换了Key，重新静默测速
+    if (val && (!endpointManager.isProbed || endpointManager.isLocked)) {
+        console.log('🔑 检测到 API Key 更新，正在后台预检通道...');
+        endpointManager.isLocked = false;
+        const results = await endpointManager.probe();
+        await modelManager.probe(endpointManager.best);
+    }
 });
 
 modelName.addEventListener('change', async () => {
@@ -662,8 +673,14 @@ function updateStats() {
 startQueueBtn.addEventListener('click', async () => {
     if (isProcessing) return;
 
-    // 启动前先测速择优
-    await endpointManager.probe();
+    // 启动前检查：如果还从未测过速，则强制跑一次
+    if (!endpointManager.isProbed) {
+        console.log('⏳ 首次运行，正在进行线路择优...');
+        await endpointManager.probe();
+        await modelManager.probe(endpointManager.best);
+    } else {
+        console.log('⚡ 使用预检测的优选通道，秒开任务...');
+    }
 
     isProcessing = true;
     startQueueBtn.style.display = 'none';
