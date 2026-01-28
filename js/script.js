@@ -109,15 +109,15 @@ const pauseQueueBtn = document.getElementById('pauseQueueBtn');
 const clearQueueBtn = document.getElementById('clearQueueBtn');
 // 接口择优管理器
 const endpointManager = {
-    list: ['/api/proxy1', '/api/proxy2', '/api/proxy3', '/api/proxy4', '/api/proxy5', '/api/proxy6'],
+    list: ['/api/proxy3', '/api/proxy4', '/api/proxy5'],
     sortedList: [],
-    best: '/api/proxy1',
+    best: '/api/proxy3',
     isLocked: false,
 
     async probe() {
         if (this.isLocked) return;
         const key = apiKey.value.trim();
-        console.log('🔍 开始 6 端口全量性能检测...');
+        console.log('🔍 开始 3 端口全量性能检测...');
         const results = await Promise.all(this.list.map(async (url) => {
             const start = Date.now();
             try {

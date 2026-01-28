@@ -1,14 +1,6 @@
 {
     "rewrites": [
         {
-            "source": "/api/proxy1/:match*",
-            "destination": "https://want.sillydream.top/:match*"
-        },
-        {
-            "source": "/api/proxy2/:match*",
-            "destination": "https://want.sillydream.top/:match*"
-        },
-        {
             "source": "/api/proxy3/:match*",
             "destination": "http://152.53.166.72:3000/:match*"
         },
@@ -19,10 +11,6 @@
         {
             "source": "/api/proxy5/:match*",
             "destination": "http://154.36.173.51:3000/:match*"
-        },
-        {
-            "source": "/api/proxy6/:match*",
-            "destination": "http://154.44.28.242:3000/:match*"
         }
     ]
 }
