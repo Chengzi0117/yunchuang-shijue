@@ -113,6 +113,7 @@ const endpointManager = {
     sortedList: [],
     best: '/api/proxy3',
     isLocked: false,
+    isProbed: false,
 
     async probe() {
         if (this.isLocked) return;
@@ -333,19 +334,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     await loadQueueFromStorage();
     checkAddTaskButton();
 
-    // 自动全链路测速
+    // 自动测速 (仅测线路，不测模型)
     if (apiKey.value.trim()) {
         try {
-            // 1. 测端口
-            const results = await endpointManager.probe();
-            const bestEndpoint = endpointManager.best;
-
-            // 2. 测模型 (在最佳端口上)
-            await modelManager.probe(bestEndpoint);
-
-            // 显示结果到隐藏的 div? 或者只是 console
-            console.log(`🏁 优选方案已就绪: ENDPOINT=[${bestEndpoint}] MODEL=[${modelManager.current}]`);
-
+            console.log('🚀 发现已存 Key，正在预选最佳网速线路...');
+            await endpointManager.probe();
+            console.log(`🏁 接口预选完成: ${endpointManager.best} (模型默认使用: ${modelManager.current})`);
         } catch (e) {
             console.error('自动初始化失败', e);
         }
@@ -682,11 +676,10 @@ function updateStats() {
 startQueueBtn.addEventListener('click', async () => {
     if (isProcessing) return;
 
-    // 仅在未测速或Key刷新时运行
-    if (!endpointManager.isProbed || !endpointManager.best) {
-        console.log('⏳ 首次运行或通道失效，正在初始化...');
+    // 仅在未测速时运行
+    if (!endpointManager.isProbed) {
+        console.log('⏳ 正在进行首次线路择优...');
         await endpointManager.probe();
-        await modelManager.probe(endpointManager.best);
     }
 
     isProcessing = true;
