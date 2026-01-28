@@ -492,14 +492,7 @@ addTaskBtn.addEventListener('click', () => {
             name: img.name,
             mimeType: img.file.type
         })),
-        prompt: (() => {
-            let p = promptInput.value.trim();
-            p += `, 图片比例 ${aspectRatio.value}`;
-            if (!p.includes('4K高清画质')) {
-                p += ', 4K高清画质';
-            }
-            return p;
-        })(),
+        prompt: promptInput.value.trim(),
         modelName: modelName.value,
         aspectRatio: aspectRatio.value,
         status: 'pending',
@@ -640,10 +633,6 @@ function removeTask(index) {
 function updateTaskPrompt(index, newPrompt) {
     if (taskQueue[index]) {
         let cleanedPrompt = newPrompt.trim();
-        // 自动补齐4K后缀逻辑
-        if (!cleanedPrompt.includes('4K高清画质')) {
-            cleanedPrompt += ', 4K高清画质';
-        }
         taskQueue[index].prompt = cleanedPrompt;
         saveQueueToStorage();
         // 更新视图以反映可能的后缀添加
@@ -844,12 +833,21 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
     let activeBaseUrl = currentBaseUrl; // 允许在重试中动态切换
     let activeModel = modelManager.current;
 
+    // 构建增强型提示词，增强 4K 画质权重
     let finalPrompt = task.prompt;
+
+    // 添加图片引用说明
     if (refImg) {
-        finalPrompt += ` - 产品图${productIndex + 1}: ${productImg.name}, 参考图${refIndex + 1} `;
+        finalPrompt += ` | Reference: Product[${productImg.name}], Style[${refImg.name}]`;
     } else {
-        finalPrompt += ` - 产品图${productIndex + 1}: ${productImg.name} `;
+        finalPrompt += ` | Reference: Product[${productImg.name}]`;
     }
+
+    // 强力追加 4K 和 比例 标签到末尾，使用中英文双重增强
+    const qualitySuffix = ` | (4K resolution, ultra-high definition, 8K UHD, masterpiece, highly detailed:1.2), 4K高清画质, 图片比例 ${task.aspectRatio || aspectRatio.value}`;
+    finalPrompt += qualitySuffix;
+
+    console.log(`📝[${getTimeString()}] 最终下发提示词: ${finalPrompt}`);
 
     const productImageBase64 = productImg.dataUrl.split(',')[1];
 
