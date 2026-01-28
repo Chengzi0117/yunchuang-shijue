@@ -20,7 +20,7 @@
         <div class="main-operation-block">
             <div class="card-title">⚙️ 配置</div>
             <div class="api-config-grid">
-                <div class="form-group">
+                <div class="form-group" style="display: none;">
                     <label for="apiEndpoint">端点</label>
                     <input type="password" id="apiEndpoint" placeholder="输入您的端口" value="/api/proxy" disabled>
                 </div>
@@ -28,16 +28,33 @@
                     <label for="apiKey">密钥</label>
                     <input type="password" id="apiKey" placeholder="输入您的密钥">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="display: none;">
                     <label for="modelName">选择模型</label>
                     <select id="modelName">
-                        <option value="gemini-3-pro-image-preview" selected>「CS」gemini-3-pro-image-preview (推荐)</option>
-                        <option value="gemini-3-pro-image-preview">「QM」gemini-3-pro-image-preview</option>
-                        <option value="gemini-3-pro-image-preview">「XXQ」gemini-3-pro-image-preview</option>
-                        <option value="gemini-3-pro-image-preview">「YS」gemini-3-pro-image-preview</option>
-                        <option value="gemini-3-pro-image-preview">「ZX」gemini-3-pro-image-preview</option>
-                        <option value="gemini-3-pro-image-preview-4K">「Rim」gemini-3-pro-image-preview-4K</option>
+                        <option value="「XXQ」gemini-3-pro-image-preview" selected>「XXQ」gemini-3-pro-image-preview
+                        </option>
+                        <option value="「ZX」gemini-3-pro-image-preview">「ZX」gemini-3-pro-image-preview</option>
+                        <option value="「YU」gemini-3-pro-image-preview">「YU」gemini-3-pro-image-preview</option>
+                        <option value="「YS」gemini-3-pro-image-preview">「YS」gemini-3-pro-image-preview</option>
+                        <option value="「Rim」gemini-3-pro-image-preview">「Rim」gemini-3-pro-image-preview</option>
+                        <option value="「QM」gemini-3-pro-image-preview">「QM」gemini-3-pro-image-preview</option>
+                        <option value="「YQ」gemini-3-pro-image-preview">「YQ」gemini-3-pro-image-preview</option>
+                        <option value="「CS」gemini-3-pro-image-preview">「CS」gemini-3-pro-image-preview</option>
+                        <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview</option>
                     </select>
+                </div>
+                <!-- 新增测速功能区 -->
+                <!-- 测速功能已改为自动执行，隐藏手动按钮 -->
+                <div class="form-group" style="display: none;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 5px;">
+                        <button id="speedTestBtn" class="btn"
+                            style="background: var(--primary-600); color: white; flex-shrink: 0;">
+                            🚀 网络测速择优
+                        </button>
+                        <div id="speedTestResult" style="font-size: 0.85rem; color: var(--slate-600);">
+                            暂未测速，系统将在任务开始前自动检测
+                        </div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="aspectRatio">图片比例</label>

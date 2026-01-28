@@ -135,6 +135,7 @@ const endpointManager = {
         this.sortedList = results.map(r => r.url);
         this.best = this.sortedList[0];
         console.log('🚀 竞速排名:', results.map(r => `${r.url}(${r.latency}ms)`).join(' > '));
+        return results; // 返回结果以便 UI 使用
     },
 
     getNext(currentUrl) {
@@ -230,16 +231,116 @@ const dbManager = {
     }
 };
 
+// 模型管理器
+const modelManager = {
+    list: [
+        '「XXQ」gemini-3-pro-image-preview',
+        '「ZX」gemini-3-pro-image-preview',
+        '「YU」gemini-3-pro-image-preview',
+        '「YS」gemini-3-pro-image-preview',
+        '「Rim」gemini-3-pro-image-preview',
+        '「QM」gemini-3-pro-image-preview',
+        '「YQ」gemini-3-pro-image-preview',
+        '「CS」gemini-3-pro-image-preview',
+        'gemini-3-pro-image-preview'
+    ],
+    current: '「XXQ」gemini-3-pro-image-preview', // 默认第一个
+    working: null, // 锁定的可用模型
+
+    async probe(endpoint) {
+        if (this.working) return this.working;
+
+        console.log('🤖 开始模型可用性自检...');
+        const key = apiKey.value.trim();
+        if (!key) return this.current;
+
+        // 顺序检测，找到第一个可用的即可
+        for (const model of this.list) {
+            console.log(`Trying model: ${model}...`);
+            try {
+                const resp = await fetch(`${endpoint}/v1beta/models/${model}:generateContent`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${key}`
+                    },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: "Hi" }] }],
+                        generationConfig: { maxOutputTokens: 1 }
+                    })
+                });
+
+                if (resp.ok) {
+                    console.log(`✅ 模型可用: ${model}`);
+                    this.working = model;
+                    this.current = model;
+                    if (modelName) modelName.value = model;
+                    await saveSecureConfig('modelName', model);
+                    return model;
+                } else {
+                    console.warn(`⚠️ 模型不可用: ${model} (${resp.status})`);
+                }
+            } catch (e) {
+                console.error(`❌ 模型检测出错: ${model}`, e);
+            }
+        }
+
+        console.error('⚠️ 所有模型检测均未通过，重置为默认');
+        this.working = this.list[0];
+        this.current = this.list[0];
+        return this.list[0];
+    },
+
+    getNext(currentModel) {
+        const idx = this.list.indexOf(currentModel);
+        if (idx === -1 || idx === this.list.length - 1) {
+            return this.list[0];
+        }
+        return this.list[idx + 1];
+    },
+
+    lock(model) {
+        this.working = model;
+        this.current = model;
+        saveSecureConfig('modelName', model);
+        console.log(`🔒 锁定优选模型: ${model}`);
+    }
+};
+
 window.addEventListener('DOMContentLoaded', async () => {
     const savedKey = await loadSecureConfig('apiKey');
-    const savedModel = await loadSecureConfig('modelName');
+    // 不要直接加载 savedModel，因为我们要重新自检，除非用户希望保持上次的
+    // 根据需求："自动进行api端口和模型测试"，所以每次刷新应该重新测？
+    // 或者只在没有 savedModel 时测？需求说 "打开网页的时候，自动...测试"
+    // 所以倾向于每次都跑一遍确保最佳，或者至少验证当前的是否还ok
 
     apiEndpoint.value = '/api/proxy';
     apiKey.value = savedKey || '';
-    modelName.value = savedModel || 'gemini-3-pro-image-preview';
+
+    // 初始化 UI
+    modelName.innerHTML = modelManager.list.map(m => `<option value="${m}">${m}</option>`).join('');
+    modelName.value = modelManager.current;
 
     await loadQueueFromStorage();
     checkAddTaskButton();
+
+    // 自动全链路测速
+    if (apiKey.value.trim()) {
+        try {
+            // 1. 测端口
+            const results = await endpointManager.probe();
+            const bestEndpoint = endpointManager.best;
+
+            // 2. 测模型 (在最佳端口上)
+            await modelManager.probe(bestEndpoint);
+
+            // 显示结果到隐藏的 div? 或者只是 console
+            console.log(`🏁 优选方案已就绪: ENDPOINT=[${bestEndpoint}] MODEL=[${modelManager.current}]`);
+
+        } catch (e) {
+            console.error('自动初始化失败', e);
+        }
+    }
 });
 
 
@@ -391,7 +492,15 @@ addTaskBtn.addEventListener('click', () => {
             name: img.name,
             mimeType: img.file.type
         })),
-        prompt: promptInput.value.trim().endsWith('4K高清画质') ? promptInput.value.trim() : promptInput.value.trim() + ', 4K高清画质',
+        prompt: (() => {
+            let p = promptInput.value.trim();
+            p += `, 图片比例 ${aspectRatio.value}`;
+            if (!p.includes('4K高清画质')) {
+                p += ', 4K高清画质';
+            }
+            return p;
+        })(),
+        modelName: modelName.value,
         aspectRatio: aspectRatio.value,
         status: 'pending',
         progress: 0,
@@ -532,7 +641,7 @@ function updateTaskPrompt(index, newPrompt) {
     if (taskQueue[index]) {
         let cleanedPrompt = newPrompt.trim();
         // 自动补齐4K后缀逻辑
-        if (!cleanedPrompt.endsWith('4K高清画质')) {
+        if (!cleanedPrompt.includes('4K高清画质')) {
             cleanedPrompt += ', 4K高清画质';
         }
         taskQueue[index].prompt = cleanedPrompt;
@@ -591,8 +700,20 @@ clearQueueBtn.addEventListener('click', async () => {
         renderTaskList();
         updateStats();
         startQueueBtn.disabled = true;
+
     }
 });
+
+// 新增测速按钮逻辑 (已废弃，改为自动执行)
+const speedTestBtn = document.getElementById('speedTestBtn');
+const speedTestResult = document.getElementById('speedTestResult');
+
+// 自动测速逻辑移至 DOMContentLoaded
+
+
+// 辅助函数：为了能在 UI 显示具体的延迟，我们可以稍微 hack 一下或者这就够了
+// 考虑到 probe 函数在前面定义了，我们也可以去修改 endpointManager.probe 让它返回 results
+
 
 async function processQueue() {
     for (let i = 0; i < taskQueue.length; i++) {
@@ -631,8 +752,9 @@ function getTimeString() {
 }
 
 async function processTask(task) {
-    // 动态拼接路径，不再从 input 读取死值
-    const getEndpoint = (baseUrl) => `${baseUrl}/v1beta/models/${modelName.value}:generateContent`;
+    // 动态获取当前优选模型
+    const getEndpoint = (baseUrl, modelOverride) =>
+        `${baseUrl}/v1beta/models/${modelOverride || modelManager.current}:generateContent`;
     const maxConcurrent = parseInt(concurrency.value) || 3;
 
     task.results = [];
@@ -717,7 +839,10 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
     const { productImg, productIndex, refImg, refIndex } = taskItem;
     const maxRetries = 3;
     let retryCount = 0;
+
+    // 初始参数
     let activeBaseUrl = currentBaseUrl; // 允许在重试中动态切换
+    let activeModel = modelManager.current;
 
     let finalPrompt = task.prompt;
     if (refImg) {
@@ -727,6 +852,8 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
     }
 
     const productImageBase64 = productImg.dataUrl.split(',')[1];
+
+    // 预组装 Body
     const requestBody = {
         contents: [{
             parts: [{
@@ -739,7 +866,7 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
             }]
         }],
         generationConfig: {
-            aspect_ratio: task.aspectRatio || aspectRatio.value
+            aspectRatio: task.aspectRatio || aspectRatio.value
         }
     };
 
@@ -754,14 +881,10 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
 
     while (retryCount <= maxRetries) {
         try {
-            const fullApiUrl = getEndpointFn(activeBaseUrl);
+            const fullApiUrl = getEndpointFn(activeBaseUrl, activeModel);
             const apiStartTime = Date.now();
 
-            console.log(`📤[${getTimeString()}] [${activeBaseUrl}] API请求 ${taskNum}/${totalTasks}:`, {
-                model: modelName.value,
-                aspectRatio: task.aspectRatio,
-                retry: retryCount
-            });
+            console.log(`📤[${getTimeString()}] 请求 ${taskNum}/${totalTasks} | 端口:${activeBaseUrl.slice(-7)} | 模型:${activeModel}`);
 
             const response = await fetch(fullApiUrl, {
                 method: 'POST',
@@ -775,36 +898,40 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
             const apiEndTime = Date.now();
             const apiDuration = ((apiEndTime - apiStartTime) / 1000).toFixed(2);
 
-            const responseText = await response.text();
-            console.log(`📥 [${getTimeString()}] [${activeBaseUrl}] 响应 ${response.status} (耗时: ${apiDuration}秒)`);
-
             if (!response.ok) {
-                // 如果是 502/超时/频率限制，执行瀑布流切换
-                if (retryCount < maxRetries && (response.status >= 500 || response.status === 429)) {
-                    retryCount++;
-                    activeBaseUrl = endpointManager.getNext(activeBaseUrl); // 瀑布流切换
-                    const delay = 500 * retryCount;
-                    console.warn(`⚠️ 接口报错 ${response.status}，按照排序切换至 ${activeBaseUrl} 并重试...`);
-                    await new Promise(r => setTimeout(r, delay));
-                    continue;
+                const responseText = await response.text();
+                console.warn(`📥 失败 ${response.status}: ${responseText.slice(0, 100)}...`);
+
+                // 核心重试策略
+                retryCount++;
+
+                // 1. 优先切换模型
+                const nextModel = modelManager.getNext(activeModel);
+                console.warn(`⚠️ 模型 ${activeModel} 异常，切换至 -> ${nextModel} 重试 (${retryCount}/${maxRetries})`);
+                activeModel = nextModel;
+
+                // 2. 偶数次尝试切换端口
+                if (retryCount % 2 === 0) {
+                    activeBaseUrl = endpointManager.getNext(activeBaseUrl);
+                    console.warn(`⚠️ 同时切换端口至 -> ${activeBaseUrl}`);
                 }
 
-                // 专门处理 400 错误
-                if (response.status === 400) {
-                    let errMsg = `图片${taskNum} 被拒绝 (400)`;
-                    if (responseText.includes('safety') || responseText.includes('blocked')) {
-                        errMsg = `图片${taskNum} 生成由于安全策略被拦截，请尝试更换图片或简化提示词`;
-                    } else if (responseText.includes('openai_error')) {
-                        errMsg = `图片${taskNum} 参数错误或代理接口限制，建议降低并发数或缩短提示词`;
-                    }
-                    throw new Error(errMsg);
-                }
-
-                throw new Error(`图片${taskNum} API请求失败 (${response.status})\n响应: ${responseText.substring(0, 200)}`);
+                const delay = 1000 * retryCount;
+                await new Promise(r => setTimeout(r, delay));
+                continue; // 重新进入循环
             }
 
-            // --- 核心改动：成功后锁定接口 ---
-            endpointManager.lock(activeBaseUrl);
+            // --- 成功逻辑 ---
+            const responseText = await response.text();
+            console.log(`✅ 成功! 耗时:${apiDuration}s`);
+
+            // 锁定成功的模型和端口
+            if (activeModel !== modelManager.current) {
+                modelManager.lock(activeModel);
+            }
+            if (activeBaseUrl !== endpointManager.best) {
+                endpointManager.lock(activeBaseUrl);
+            }
 
             let data;
             try {
@@ -814,8 +941,7 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
             }
 
             if (data.promptFeedback && data.promptFeedback.blockReason) {
-                const blockReason = data.promptFeedback.blockReason;
-                throw new Error(`图片${taskNum} 生成被阻止: ${blockReason}。建议更换图片或简化提示词`);
+                throw new Error(`图片${taskNum} 生成由于安全策略被拦截: ${data.promptFeedback.blockReason}`);
             }
 
             if (data.candidates && data.candidates[0]?.content?.parts) {
@@ -824,8 +950,6 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
                 if (imagePart) {
                     const imageData = imagePart.inlineData || imagePart.inline_data;
                     const mimeType = imageData.mimeType || imageData.mime_type || 'image/png';
-                    const totalDuration = ((Date.now() - apiStartTime) / 1000).toFixed(2);
-                    console.log(`✅ [${getTimeString()}] 图片${taskNum} 生成成功！MIME类型: ${mimeType}, 总耗时: ${totalDuration}秒`);
                     return {
                         imageUrl: `data:${mimeType};base64,${imageData.data}`,
                         productName: productImg.name,
@@ -834,21 +958,21 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
                 }
             }
 
-            console.error(`❌ 无法提取图片${taskNum}的数据，完整响应:`, data);
-            throw new Error(`无法提取图片${taskNum}数据`);
+            throw new Error(`无法从响应中提取图片数据: ${responseText.substring(0, 100)}...`);
 
         } catch (error) {
+            // 网络级错误（非HTTP响应错误）处理
             if (retryCount < maxRetries && (error.message.includes('fetch') || error.message.includes('Network'))) {
                 retryCount++;
-                activeBaseUrl = endpointManager.getNext(activeBaseUrl); // 瀑布流切换
-                const delay = 1000;
-                console.warn(`⚠️ 网络连接失败，切换至 ${activeBaseUrl} 并重启重试...`);
-                await new Promise(r => setTimeout(r, delay));
+                activeBaseUrl = endpointManager.getNext(activeBaseUrl);
+                console.warn(`⚠️ 网络连接失败，切换至 ${activeBaseUrl} 重试...`);
+                await new Promise(r => setTimeout(r, 1000));
                 continue;
             }
-            throw error;
+            throw error; // 无法重试的错误，抛出
         }
     }
+    throw new Error(`图片${taskNum} 重试次数耗尽，生成失败`);
 }
 
 function downloadImage(url, filename) {
