@@ -113,7 +113,6 @@ const endpointManager = {
     sortedList: [],
     best: '/api/proxy1',
     isLocked: false,
-    isProbed: false, // 是否已经完成过初次测速
 
     async probe() {
         if (this.isLocked) return;
@@ -122,10 +121,17 @@ const endpointManager = {
         const results = await Promise.all(this.list.map(async (url) => {
             const start = Date.now();
             try {
+                // 采用双重 Header 兼容方案防止 403
+                const headers = {};
+                if (key) {
+                    headers['Authorization'] = `Bearer ${key}`;
+                    headers['x-goog-api-key'] = key;
+                }
+
                 const resp = await fetch(`${url}/v1beta/models`, {
                     method: 'GET',
                     priority: 'high',
-                    headers: key ? { 'Authorization': `Bearer ${key}` } : {}
+                    headers: headers
                 });
                 return { url, latency: resp.ok ? Date.now() - start : 5000 };
             } catch (e) {
@@ -135,9 +141,9 @@ const endpointManager = {
         results.sort((a, b) => a.latency - b.latency);
         this.sortedList = results.map(r => r.url);
         this.best = this.sortedList[0];
-        this.isProbed = true; // 标记已完成测速
+        this.isProbed = true; // 锁定标志位避免重复探测
         console.log('🚀 竞速排名:', results.map(r => `${r.url}(${r.latency}ms)`).join(' > '));
-        return results; // 返回结果以便 UI 使用
+        return results;
     },
 
     getNext(currentUrl) {
@@ -264,7 +270,8 @@ const modelManager = {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${key}`
+                        'Authorization': `Bearer ${key}`,
+                        'x-goog-api-key': key
                     },
                     body: JSON.stringify({
                         contents: [{ parts: [{ text: "Hi" }] }],
@@ -348,16 +355,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 
 apiKey.addEventListener('change', async () => {
-    const val = apiKey.value.trim();
-    await saveSecureConfig('apiKey', val);
-
-    // 如果之前没测过，或者换了Key，重新静默测速
-    if (val && (!endpointManager.isProbed || endpointManager.isLocked)) {
-        console.log('🔑 检测到 API Key 更新，正在后台预检通道...');
-        endpointManager.isLocked = false;
-        const results = await endpointManager.probe();
-        await modelManager.probe(endpointManager.best);
-    }
+    await saveSecureConfig('apiKey', apiKey.value);
 });
 
 modelName.addEventListener('change', async () => {
@@ -503,7 +501,14 @@ addTaskBtn.addEventListener('click', () => {
             name: img.name,
             mimeType: img.file.type
         })),
-        prompt: promptInput.value.trim(),
+        prompt: (() => {
+            let p = promptInput.value.trim();
+            p += `, 图片比例 ${aspectRatio.value}`;
+            if (!p.includes('4K高清画质')) {
+                p += ', 4K高清画质';
+            }
+            return p;
+        })(),
         modelName: modelName.value,
         aspectRatio: aspectRatio.value,
         status: 'pending',
@@ -644,6 +649,10 @@ function removeTask(index) {
 function updateTaskPrompt(index, newPrompt) {
     if (taskQueue[index]) {
         let cleanedPrompt = newPrompt.trim();
+        // 自动补齐4K后缀逻辑
+        if (!cleanedPrompt.includes('4K高清画质')) {
+            cleanedPrompt += ', 4K高清画质';
+        }
         taskQueue[index].prompt = cleanedPrompt;
         saveQueueToStorage();
         // 更新视图以反映可能的后缀添加
@@ -673,13 +682,11 @@ function updateStats() {
 startQueueBtn.addEventListener('click', async () => {
     if (isProcessing) return;
 
-    // 启动前检查：如果还从未测过速，则强制跑一次
-    if (!endpointManager.isProbed) {
-        console.log('⏳ 首次运行，正在进行线路择优...');
+    // 仅在未测速或Key刷新时运行
+    if (!endpointManager.isProbed || !endpointManager.best) {
+        console.log('⏳ 首次运行或通道失效，正在初始化...');
         await endpointManager.probe();
         await modelManager.probe(endpointManager.best);
-    } else {
-        console.log('⚡ 使用预检测的优选通道，秒开任务...');
     }
 
     isProcessing = true;
@@ -722,24 +729,29 @@ const speedTestResult = document.getElementById('speedTestResult');
 
 
 async function processQueue() {
-    for (let i = 0; i < taskQueue.length; i++) {
-        if (!isProcessing) break;
+    console.log('📡 队列监听已开启...');
+    while (isProcessing) {
+        // 查找队列中第一个等待中的任务
+        const taskIndex = taskQueue.findIndex(t => t.status === 'pending');
 
-        const task = taskQueue[i];
-        if (task.status !== 'pending') continue;
+        if (taskIndex === -1) {
+            // 暂时没有待处理任务，微调休眠时间，进入后台监听模式
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+        }
 
+        const task = taskQueue[taskIndex];
         task.status = 'processing';
         renderTaskList();
         updateStats();
 
         try {
             await processTask(task);
-            // 处理完后，根据结果判断状态
             if (task.results.length === 0 && task.productImages.length > 0) {
                 task.status = 'failed';
             } else {
                 task.status = 'completed';
-                task.progress = 100; // 强制标记为100%
+                task.progress = 100;
             }
         } catch (error) {
             console.error('任务处理过程发生严重错误:', error);
@@ -750,6 +762,7 @@ async function processQueue() {
         renderTaskList();
         updateStats();
     }
+    console.log('🛑 队列已暂停/结束');
 }
 
 function getTimeString() {
@@ -850,21 +863,22 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
     let activeBaseUrl = currentBaseUrl; // 允许在重试中动态切换
     let activeModel = modelManager.current;
 
-    // 构建增强型提示词，增强 4K 画质权重
+    // --- 提示词增强逻辑开始 ---
     let finalPrompt = task.prompt;
 
-    // 添加图片引用说明
+    // 注入引用标签
     if (refImg) {
         finalPrompt += ` | Reference: Product[${productImg.name}], Style[${refImg.name}]`;
     } else {
         finalPrompt += ` | Reference: Product[${productImg.name}]`;
     }
 
-    // 强力追加 4K 和 比例 标签到末尾，使用中英文双重增强
+    // 注入最高权重画质标签（放在提示词末尾）
     const qualitySuffix = ` | (4K resolution, ultra-high definition, 8K UHD, masterpiece, highly detailed:1.2), 4K高清画质, 图片比例 ${task.aspectRatio || aspectRatio.value}`;
     finalPrompt += qualitySuffix;
 
     console.log(`📝[${getTimeString()}] 最终下发提示词: ${finalPrompt}`);
+    // --- 提示词增强逻辑结束 ---
 
     const productImageBase64 = productImg.dataUrl.split(',')[1];
 
@@ -905,7 +919,8 @@ async function generateSingleImage(task, taskItem, currentBaseUrl, taskNum, tota
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey.value.trim()}`
+                    'Authorization': `Bearer ${apiKey.value.trim()}`,
+                    'x-goog-api-key': apiKey.value.trim()
                 },
                 body: JSON.stringify(requestBody)
             });
