@@ -243,7 +243,6 @@ const dbManager = {
 // 模型管理器
 const modelManager = {
     list: [
-        '「XXQ」gemini-3-pro-image-preview',
         '「ZX」gemini-3-pro-image-preview',
         '「YU」gemini-3-pro-image-preview',
         '「YS」gemini-3-pro-image-preview',
@@ -253,7 +252,7 @@ const modelManager = {
         '「CS」gemini-3-pro-image-preview',
         'gemini-3-pro-image-preview'
     ],
-    current: '「XXQ」gemini-3-pro-image-preview', // 默认第一个
+    current: '「ZX」gemini-3-pro-image-preview', // 默认ZX（XXQ已移除，不稳定）
     working: null, // 锁定的可用模型
 
     async probe(endpoint) {
